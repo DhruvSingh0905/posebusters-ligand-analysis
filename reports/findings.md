@@ -166,10 +166,25 @@ Surviving checks, by count: `no_internal_clashes` (19), `no_clashes_with_protein
 `bond_lengths_within_bounds` (8), `bond_angles_within_bounds` (7),
 `sp3_stereochemistry_preserved` (7), `aromatic_ring_flatness_passes` (4),
 `no_clashes_with_organic_cofactors` (1, the tankbind/clogp effect above).
-Stereochemistry failures remain the one check whose surviving descriptor is
-consistently and only `n_stereocentres` (e.g. TankBind, *d* = 1.18,
-95% CI [0.98, 1.39]) — the one claim from the original report that holds up
-unchanged under every layer of correction.
+`sp3_stereochemistry_preserved` is worth reading carefully, because its
+7 surviving pairs repeat the exact trap called out above. The marginal grid
+shows `n_stereocentres` surviving for both TankBind (*d* = 1.18, 95%
+CI [0.98, 1.39]) and Uni-Mol (*d* = 0.84), but also `clogp` (TankBind
+*d* = −0.97, Uni-Mol *d* = −0.55), `n_halogens` (both methods) and, for
+Uni-Mol, `n_aromatic_rings` — four descriptors that all look like they explain
+the same failures. They co-survive because `n_stereocentres` and `clogp`
+correlate at *r* ≈ −0.55 in this ligand set: molecules with more stereocentres
+tend to be less lipophilic, so a marginal contrast cannot tell which one is
+doing the work. The clustered logistic model resolves it
+(`reports/tables/check_models.csv`): `n_stereocentres` is the only descriptor
+with independent signal for either method (TankBind *p* = 2.0×10⁻⁷, Uni-Mol
+*p* = 1.7×10⁻⁵), and every other descriptor — `clogp` included — has
+*p* > 0.05 for both. The conclusion is the same one the `mw` /
+`n_rotatable_bonds` discussion draws: the marginal grid cannot separate
+correlated descriptors, and crediting it as if it could is the same mistake
+in miniature. It is the model, not the grid, that shows stereochemistry
+failure is a stereocentre-count phenomenon and not also a lipophilicity or
+halogen-count one.
 
 ---
 

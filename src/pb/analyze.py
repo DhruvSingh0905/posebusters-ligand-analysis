@@ -4,11 +4,13 @@
 published report: `association_grid` (Task 4 strata + Task 3 cluster
 bootstrap + BH-FDR), `check_models` (Task 6 clustered logistic models, one per
 method so no claim is a pooled artifact of whichever method contributes the
-most rows), and the crystal-contact sensitivity split (Task 5). The older
-per-descriptor helper functions below are retained only because `pb.figures`
-still uses two of them (`outcome_by_bin`, `primary`) for the two figures that
-were not retired; they are descriptive companions, not the source of any
-effect-size claim in the report - those all come from `association_grid`.
+most rows), and the crystal-contact sensitivity split (Task 5). `method_summary`,
+`check_rate_by_bin` and `outcome_by_bin` are kept as descriptive companions -
+`pb.figures` still uses `outcome_by_bin` and `primary` for the two figures that
+were not retired, and `main()` still writes their tables for the headline and
+secondary ("accurate but invalid") sections of the report - but none of them is
+the source of an effect-size claim; those all come from `association_grid` and
+`check_models`.
 """
 
 from __future__ import annotations
@@ -21,35 +23,12 @@ import pandas as pd
 from . import paths
 from .build import CHECKS, CLASSICAL_METHODS, DL_METHODS
 from .eligibility import eligible
-from .inference import cluster_bootstrap_d, cohens_d
+from .inference import cluster_bootstrap_d
 from .strata import stratum_frame
 
 log = logging.getLogger(__name__)
 
 TABLES = paths.REPORTS / "tables"
-
-NUMERIC_DESCRIPTORS = [
-    "mw",
-    "heavy_atoms",
-    "n_rotatable_bonds",
-    "rot_per_heavy_atom",
-    "fraction_csp3",
-    "n_rings",
-    "n_aromatic_rings",
-    "n_aliphatic_rings",
-    "largest_ring_size",
-    "n_stereocentres",
-    "n_amide_bonds",
-    "tpsa",
-    "clogp",
-    "hbd",
-    "hba",
-    "n_heteroatoms",
-    "n_halogens",
-    "formal_charge",
-]
-
-BINS = ["rotb_bin", "mw_bin", "rings_bin", "stereo_bin", "heavy_bin"]
 
 MIN_FAILURES = 15  # below this an association is too thin to report
 
@@ -91,46 +70,6 @@ def method_summary(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows).sort_values(
         ["post_processing", "accurate"], ascending=[True, False]
     )
-
-
-def check_descriptor_associations(df: pd.DataFrame) -> pd.DataFrame:
-    """For every (check, descriptor): do failing poses differ in that property?
-
-    Restricted to rows where the check actually ran, so a check that was never
-    executed contributes nothing rather than a spurious association.
-    """
-    rows = []
-    for check in CHECKS:
-        ran = df[df[check].notna()]
-        if ran.empty:
-            continue
-        failed = ran[check] == False  # noqa: E712
-        n_fail = int(failed.sum())
-        if n_fail < MIN_FAILURES:
-            continue
-
-        for descriptor in NUMERIC_DESCRIPTORS:
-            values = pd.Series(ran[descriptor])
-            failing = values[failed].dropna()
-            passing = values[~failed].dropna()
-            if failing.empty or passing.empty:
-                continue
-            rows.append(
-                {
-                    "check": check,
-                    "descriptor": descriptor,
-                    "n_ran": len(ran),
-                    "n_failed": n_fail,
-                    "failure_rate": n_fail / len(ran),
-                    "mean_failing": failing.mean(),
-                    "mean_passing": passing.mean(),
-                    "cohens_d": cohens_d(failing, passing),
-                }
-            )
-
-    out = pd.DataFrame(rows)
-    out["abs_d"] = out["cohens_d"].abs()
-    return out.sort_values("abs_d", ascending=False)
 
 
 def check_rate_by_bin(df: pd.DataFrame, bin_column: str) -> pd.DataFrame:
@@ -175,45 +114,6 @@ def outcome_by_bin(df: pd.DataFrame, bin_column: str) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(rows)
-
-
-def stratified_check_rate(
-    df: pd.DataFrame, check: str, inner: str = "rotb_bin", outer: str = "mw_bin"
-) -> pd.DataFrame:
-    """Failure rate of `check` across `inner`, held within each level of `outer`.
-
-    Molecular weight and rotatable-bond count are strongly correlated
-    (Spearman 0.73 across the 428 ligands), so a trend against flexibility could
-    just be a trend against size. Reading down a column here separates them: if
-    the rate still climbs across `inner` inside every band of `outer`, the effect
-    is not size in disguise.
-    """
-    ran = df[df[check].notna()].assign(failed=lambda d: d[check] == False)  # noqa: E712
-    rate = ran.pivot_table(
-        index=outer, columns=inner, values="failed", aggfunc="mean", observed=True
-    )
-    counts = ran.pivot_table(
-        index=outer, columns=inner, values="failed", aggfunc="size", observed=True
-    )
-    return rate.where(counts >= 10)  # suppress cells too thin to read
-
-
-def descriptor_correlations(df: pd.DataFrame) -> pd.DataFrame:
-    """Spearman correlations between descriptors, one row per complex."""
-    ligands = df.drop_duplicates(subset=["dataset", "pdb_id"])
-    return ligands[NUMERIC_DESCRIPTORS].corr(method="spearman")
-
-
-def per_method_trend(df: pd.DataFrame, check: str, bin_column: str) -> pd.DataFrame:
-    """Does one check's trend across a partition hold within each method?"""
-    ran = df[df[check].notna()]
-    table = (
-        ran.assign(failed=(ran[check] == False))  # noqa: E712
-        .groupby(["method", bin_column], observed=True)["failed"]
-        .mean()
-        .unstack(bin_column)
-    )
-    return table
 
 
 # ── new for the gated/clustered/FDR-controlled report (Task 9) ────────────
