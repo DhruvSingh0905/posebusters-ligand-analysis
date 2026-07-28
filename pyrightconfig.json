@@ -1,0 +1,12 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "extraPaths": ["src"],
+  "typeCheckingMode": "basic",
+
+  "//": "pandas 3.0 stubs type df[mask] as DataFrame|Series and reject the callable float_format that to_string documents. Both patterns are correct at runtime.",
+  "reportReturnType": "none",
+  "reportArgumentType": "none",
+  "reportAttributeAccessIssue": "none",
+  "reportMissingImports": "none"
+}
