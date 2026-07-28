@@ -173,6 +173,22 @@ def add_bins(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def analysis_population(
+    df: pd.DataFrame, post: str = "none", dataset: str = "posebuster"
+) -> pd.DataFrame:
+    """The rows every reported statistic is computed on.
+
+    Excludes the crystal-structure reference rows and any pose the method never
+    produced, so downstream code never has to remember to filter them.
+    """
+    return df[
+        (df["dataset"] == dataset)
+        & (df["post-processing"] == post)
+        & (df["method"].isin(DL_METHODS + CLASSICAL_METHODS))
+        & df["pose_produced"]
+    ].copy()
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     paths.ensure_dirs()
