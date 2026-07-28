@@ -21,7 +21,7 @@ code, a chemical-component code, a cofactor flag and a sequence identity, and
 nothing else about the molecule being docked. The crystal ligands themselves sit
 in the same Zenodo archive as unanalysed SDF files.
 
-So: compute 28 RDKit descriptors from each crystal ligand, join them onto all
+So: compute 27 RDKit descriptors from each crystal ligand, join them onto all
 7,695 pose rows, and partition the failures by ligand chemistry.
 
 All 513 ligands parsed and sanitized without error. The analysis below uses the
@@ -76,7 +76,7 @@ in this data.** The finding is deleted, not restated more cautiously.
 
 ---
 
-## Finding — crystal contacts: the audit's prediction, refuted
+## Finding — crystal contacts: the audit's prediction, not supported
 
 The published PoseBusters Benchmark ships 428 complexes; the journal version
 reports on a 308-complex subset after removing ligands that contact a
@@ -95,36 +95,46 @@ paper's reported 120 removed — an independent estimate, not a reproduction of
 their exact list.
 
 **The audit's hypothesis was that clash failure would be *inflated* among
-contact-bearing complexes. The data says the opposite for almost every
-method:**
+contact-bearing complexes. With a cluster-bootstrap interval on the
+contact-minus-no-contact difference (resampling complexes within each
+method's stratum, 2,000 replicates, seed 0), that prediction is not
+supported: exactly one of seven methods shows a significant difference, and
+it runs in the *opposite* direction to the prediction.**
 
-| Method | Protein-clash failure, no contact | Protein-clash failure, contact | Direction |
-|---|---|---|---|
-| DiffDock | 70.5% | 61.2% | lower with contact |
-| Uni-Mol | 86.1% | 68.9% | lower with contact |
-| TankBind | 85.1% | 77.9% | lower with contact |
-| EquiBind | 98.4% | 96.1% | lower with contact |
-| CCDC Gold | 5.0% | 2.9% | lower with contact |
-| AutoDock Vina | 0.6% | 0.0% | lower with contact |
-| DeepDock | 85.1% | 91.3% | **higher with contact** |
+| Method | Contact | No contact | diff (pp) | 95% CI (pp) | Significant? |
+|---|---|---|---|---|---|
+| Uni-Mol | 68.9% (71/103) | 86.1% (278/323) | −17.1 | [−27.0, −7.7] | **yes, opposite direction** |
+| DiffDock | 61.2% (63/103) | 70.5% (227/322) | −9.3 | [−19.6, +1.8] | no |
+| TankBind | 77.9% (81/104) | 85.1% (275/323) | −7.3 | [−16.2, +1.6] | no |
+| DeepDock | 91.3% (94/103) | 85.1% (275/323) | +6.1 | [−0.9, +12.5] | no |
+| EquiBind | 96.1% (99/103) | 98.4% (317/322) | −2.3 | [−6.6, +1.2] | no |
+| CCDC Gold | 2.9% (3/102) | 5.0% (16/322) | −2.0 | [−5.9, +2.4] | no |
+| AutoDock Vina | 0.0% (0/104) | 0.6% (2/323) | −0.6 | [−1.5, 0.0] | no |
 
-Source: `reports/tables/crystal_contact_sensitivity.csv` (n ≈ 103 contact,
-≈ 323 no-contact per method). Six of seven methods show *lower* clash failure
-on contact-bearing complexes — the reverse of the audit's prediction — and one
-(DeepDock) shows the predicted direction. This was checked for a sign error by
-two independent readings of the code and is not one. Among contact-bearing
-complexes, the closest symmetry approach averages 3.13 Å
-(`reports/tables/crystal_contact_distances.csv`,
-computed only over complexes flagged as contact-bearing — averaging the raw
-distance column over *all* complexes is wrong, because "no symmetry neighbour
-found within the search radius" is stored as `float("inf")`, not as a
-measurement, and would silently corrupt any wider mean).
+Source: `reports/tables/crystal_contact_sensitivity.csv`. Only Uni-Mol's
+interval excludes zero, and its direction is *lower* clash failure among
+contact-bearing complexes — the reverse of what the audit predicted, not a
+confirmation of it. The other six methods, DeepDock included, are
+indistinguishable from zero; none of their point estimates should be read as
+a direction. Vina's and Gold's rows are the clearest illustration of why:
+Vina's entire contribution is 2 failing poses out of 323 no-contact rows (0
+of 104 contact rows), and Gold's is 16 of 322 versus 3 of 102 — at those
+counts a "direction" is not a finding, it is noise from a handful of poses.
 
-This is reported as a **refuted prediction**, not quietly dropped. A plausible
-reading is that ligands that pack against a crystal contact are, on average,
-smaller or bind in tighter pockets that also happen to reduce protein clash —
-but this data cannot distinguish that from other explanations, and no such
-claim is made here.
+This is reported as a **prediction that is not supported by this data**, not
+quietly dropped. A plausible reading of the one significant result is that
+Uni-Mol's contact-bearing ligands are, on average, smaller or bind in tighter
+pockets that also happen to reduce protein clash — but this data cannot
+distinguish that from other explanations, and no such claim is made here.
+Among contact-bearing complexes, the closest symmetry approach averages
+3.13 Å (`reports/tables/crystal_contact_distances.csv`, computed only over
+complexes flagged as contact-bearing — averaging the raw distance column over
+*all* complexes is wrong, because "no symmetry neighbour found within the
+search radius" is stored as `float("inf")`, not as a measurement, and would
+silently corrupt any wider mean).
+
+**Bottom line: audit issue #4 (crystal contacts inflate protein-clash
+failure) is not supported by this data.**
 
 ---
 
@@ -133,10 +143,16 @@ claim is made here.
 Of the 126 method × check strata that could in principle be tested (7 methods
 × 18 checks), only **41 had enough failures and enough distinct ligands to
 estimate at all** (`reports/tables/stratum_coverage.csv`); the other 85 were
-skipped — most because the check never failed on that method at all (e.g. no
-classical-method run has enough double-bond-flatness failures to test), a few
-because every eligible pose failed (a real result, not a data shortage, but one
-a two-group contrast cannot describe). Across those 41 strata, every
+skipped for one of three reasons: **59 because the check never failed on that
+method at all** (`no_failures` — e.g. no classical-method run has enough
+double-bond-flatness failures to test), **25 because it failed too few times
+to trust an interval** (`too_few_failures`, fewer than 15 failures), and
+**1 because too few distinct ligands carried it** (`too_few_ligands`, fewer
+than 30 clusters). A fourth category the coverage logic also checks for —
+every eligible pose failing (`all_failed`), a real result a two-group
+contrast still cannot describe — did not occur anywhere in this data; no
+stratum hit it, though the code keeps handling it in case a future rerun
+does. Across those 41 strata, every
 descriptor in the model basis was tested against every check, giving **287
 (method, check, descriptor) estimates. Of those, 95 survive Benjamini-Hochberg
 correction at α = 0.05** (`reports/tables/association_grid.csv`).
@@ -153,13 +169,20 @@ marginal effects on the *same* check for the *same* method — Uni-Mol ×
 `n_rotatable_bonds`; Uni-Mol × `no_internal_clashes` shows *d* = 1.56 for `mw`
 and *d* = 1.26 for `n_rotatable_bonds`. That is not two independent findings —
 it is one signal counted twice, because the two descriptors correlate at
-*r* ≈ 0.73–0.74 within every method's ligand set
-(`reports/tables/mw_rotb_correlation.csv`). Marginal comparisons cannot tell
+*ρ* ≈ 0.73–0.74 within every method's ligand set
+(`reports/tables/mw_rotb_correlation.csv`, `mw`/`n_rotatable_bonds` rows).
+Marginal comparisons cannot tell
 these apart. The clustered logistic models in `reports/tables/check_models.csv`
 — one model per check per method, all seven descriptors entered together —
 are what arbitrate this, and the next section reports what they say for the
 question this project set out to answer. **Where the grid and the models
-disagree, the models govern.**
+disagree, the models govern.** Five of the 46 fitted model strata fall below
+this project's own ≥15-failure floor (`gold` ×
+`energy_ratio_within_threshold`, n_fail=3; `deepdock`, `diffdock`,
+`equibind` and `unimol` × `no_clashes_with_inorganic_cofactors`, n_fail
+11–12) — they are not dropped, but are flagged `estimable=False` in
+`reports/tables/check_models.csv` so a reader applying the same gate to the
+models that this project applies to the grid can identify and exclude them.
 
 Surviving checks, by count: `no_internal_clashes` (19), `no_clashes_with_protein`
 (17), `no_volume_clash_with_protein` (17), `energy_ratio_within_threshold` (15),
@@ -173,9 +196,11 @@ CI [0.98, 1.39]) and Uni-Mol (*d* = 0.84), but also `clogp` (TankBind
 *d* = −0.97, Uni-Mol *d* = −0.55), `n_halogens` (both methods) and, for
 Uni-Mol, `n_aromatic_rings` — four descriptors that all look like they explain
 the same failures. They co-survive because `n_stereocentres` and `clogp`
-correlate at *r* ≈ −0.55 in this ligand set: molecules with more stereocentres
-tend to be less lipophilic, so a marginal contrast cannot tell which one is
-doing the work. The clustered logistic model resolves it
+correlate at *ρ* ≈ −0.55 in this ligand set
+(`reports/tables/mw_rotb_correlation.csv`, `n_stereocentres`/`clogp` rows):
+molecules with more stereocentres tend to be less lipophilic, so a marginal
+contrast cannot tell which one is doing the work. The clustered logistic
+model resolves it
 (`reports/tables/check_models.csv`): `n_stereocentres` is the only descriptor
 with independent signal for either method (TankBind *p* = 2.0×10⁻⁷, Uni-Mol
 *p* = 1.7×10⁻⁵), and every other descriptor — `clogp` included — has
@@ -286,6 +311,19 @@ throughout the ligand set and only a multivariate model can separate them.
 ![gap by partition](figures/01_gap_by_partition.png)
 ![checks by flexibility](figures/02_checks_by_flexibility.png)
 
+Figure 2's per-check denominators are eligibility-gated
+(`pb.eligibility.eligible`, not merely "the check ran") — a ligand that
+cannot fail a check (no stereocentres, no aromatic ring the flatness check
+inspects) is excluded rather than counted as a trivial pass, which is why
+`sp3_stereochemistry_preserved` reads 34-42% per bin here (36.7% pooled)
+rather than an ungated 21.4%. The four cofactor-clash checks are excluded
+from this figure entirely:
+they are conditioned on the receptor (whether the complex carries a cofactor
+at all), not on the ligand, so plotting them against rotatable-bond count
+without a `has_cofactors` gate would reanimate the retracted cofactor claim
+in a weaker, unlabelled form. The panels pool all five deep-learning methods
+(the subtitle says so) and are marginal, not per-method, views.
+
 ---
 
 ## Validation — reproducing the crystal-structure rows with `bust`
@@ -325,9 +363,10 @@ Of 14 checkable (method, check, descriptor) triples
 (`reports/tables/astex_replication.csv`):
 
 - **13 of 14 have the same sign on Astex as on the benchmark.** Same-sign
-  alone is a weak standard — one of those 13 pairs has an estimate
-  indistinguishable from zero on the benchmark side, the Astex side, or both,
-  so "same sign" there is not evidence of anything.
+  alone is a weak standard — **5 of those 13 pairs** have an estimate
+  indistinguishable from zero on the benchmark side, the Astex side, or both
+  (DiffDock/protein-clash, Uni-Mol/sp3, DeepDock/sp3, TankBind/sp3 and
+  TankBind/protein-clash), so "same sign" there is not evidence of anything.
 - **8 of 14 replicate with statistical support** — both the benchmark and the
   Astex interval exclude zero (`both_significant`). This is the number to
   cite for "replicates," not the 13/14 sign count.
@@ -404,11 +443,16 @@ rows, where output failures are more common.
   was docked, not the pose that came back. That is the right choice for
   partitioning, but it means nothing here measures how *wrong* a pose is beyond
   the binary checks.
-- 85 of 126 method × check strata (67%) could not be estimated at all — no
-  failures, too few failures, too few distinct ligands, or every eligible pose
-  failing. `reports/tables/stratum_coverage.csv` records the reason for each.
-  The 95 surviving effects above describe roughly a third of the strata that
-  exist, not all of them.
+- 85 of 126 method × check strata (67%) could not be estimated at all: 59
+  because the check never failed on that method (`no_failures`), 25 because it
+  failed too few times to trust an interval (`too_few_failures`, <15), and 1
+  because too few distinct ligands carried it (`too_few_ligands`, <30
+  clusters). The fourth possible reason, every eligible pose failing
+  (`all_failed`), did not occur for any stratum in this data — it is handled
+  by the same logic in case it ever arises, but it is not why any of these 85
+  were skipped. `reports/tables/stratum_coverage.csv` records the reason for
+  each. The 95 surviving effects above describe roughly a third of the strata
+  that exist, not all of them.
 - The size-vs-flexibility contrast is not identified for DiffDock, and Gold
   and Vina fail too rarely on most checks to fit a multivariate model at all.
   These are not gaps to be filled by more analysis of this dataset — the

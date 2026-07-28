@@ -81,9 +81,18 @@ def compare_to_published(ours: pd.DataFrame) -> pd.DataFrame:
     )
 
     rows = []
+    missing = []
     for column in COLUMN_MAP.values():
         ours_col, theirs_col = f"{column}_ours", f"{column}_theirs"
         if ours_col not in merged or theirs_col not in merged:
+            log.error(
+                "%s: column missing from the merged frame (%s not in merged, "
+                "%s not in merged) - this check will not appear in "
+                "bust_reproduction.csv and any 'worst agreement' summary "
+                "silently no longer covers it",
+                column, ours_col, theirs_col,
+            )
+            missing.append(column)
             continue
         both = merged[[ours_col, theirs_col]].dropna()
         agree = (both[ours_col].astype(bool) == both[theirs_col].astype(bool)).sum()
@@ -93,7 +102,17 @@ def compare_to_published(ours: pd.DataFrame) -> pd.DataFrame:
             "n_agree": int(agree),
             "agreement": agree / len(both) if len(both) else float("nan"),
         })
-    return pd.DataFrame(rows).sort_values("agreement")
+
+    out = pd.DataFrame(rows).sort_values("agreement")
+    if len(out) != len(COLUMN_MAP):
+        raise AssertionError(
+            f"compare_to_published covers {len(out)} of {len(COLUMN_MAP)} "
+            f"mapped checks - missing: {missing}. A posebusters upgrade "
+            f"likely renamed a COLUMN_MAP key; findings.md's "
+            f"'across the N mapped checks' claim depends on this count "
+            f"matching COLUMN_MAP exactly."
+        )
+    return out
 
 
 def main() -> None:

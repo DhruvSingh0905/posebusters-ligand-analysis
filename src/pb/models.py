@@ -49,8 +49,16 @@ DESCRIPTOR_BASIS = [
     "n_halogens",
 ]
 
+# Below this many failures a fitted coefficient is too thin to report as a
+# finding - matches `analyze.MIN_FAILURES` and `strata.association_grid`'s
+# default `min_failures`. Rows this thin are still fit and returned (a reader
+# applying the project's own gate needs to be able to find them), just flagged
+# `estimable=False` rather than silently dropped.
+MIN_FAILURES = 15
+
 _EMPTY_COLUMNS = ["descriptor", "coef", "std_err", "z", "p_value",
-                  "odds_ratio", "ci_lo", "ci_hi"]
+                  "odds_ratio", "ci_lo", "ci_hi",
+                  "n_fail", "n_eligible", "n_clusters", "estimable"]
 
 
 def variance_inflation(df: pd.DataFrame, descriptors: list[str]) -> pd.Series:
@@ -91,6 +99,11 @@ def fit_check_model(
     if frame.empty:
         return pd.DataFrame(columns=_EMPTY_COLUMNS)
 
+    n_fail = int((frame[check] == False).sum())  # noqa: E712
+    n_eligible = len(frame)
+    n_clusters = int(frame["pdb_id"].nunique())
+    estimable = n_fail >= MIN_FAILURES
+
     outcome = (frame[check] == False).astype(int).to_numpy()  # noqa: E712
     if outcome.sum() in (0, len(outcome)):
         return pd.DataFrame(columns=_EMPTY_COLUMNS)
@@ -126,5 +139,9 @@ def fit_check_model(
         "odds_ratio": np.exp(fitted.params.to_numpy()),
         "ci_lo": np.exp(confidence.iloc[:, 0].to_numpy()),
         "ci_hi": np.exp(confidence.iloc[:, 1].to_numpy()),
+        "n_fail": n_fail,
+        "n_eligible": n_eligible,
+        "n_clusters": n_clusters,
+        "estimable": estimable,
     })
     return out[out["descriptor"] != "const"].reset_index(drop=True)

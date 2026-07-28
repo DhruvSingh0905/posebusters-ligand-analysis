@@ -9,7 +9,7 @@ Findings: [`reports/findings.md`](reports/findings.md)
 
 ## Layout
 
-    src/pb/descriptors.py      28 RDKit descriptors per crystal ligand
+    src/pb/descriptors.py      27 RDKit descriptors per crystal ligand
     src/pb/build.py            join + validity derivation (blank != False)
     src/pb/eligibility.py      which ligands can even fail which check
     src/pb/strata.py           per-method, cofactor-conditioned strata

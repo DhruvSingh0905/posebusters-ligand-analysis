@@ -19,6 +19,8 @@ from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm
 from . import paths
 from .analyze import outcome_by_bin, primary
 from .build import CHECKS
+from .eligibility import eligible
+from .strata import COFACTOR_CHECKS
 
 log = logging.getLogger(__name__)
 
@@ -107,15 +109,38 @@ def fig_gap_by_partition(raw: pd.DataFrame) -> None:
 
 
 def fig_checks_by_flexibility(dl: pd.DataFrame) -> None:
-    """Which specific checks degrade with rotatable bonds."""
-    order = [c for c in CHECKS if (dl[c] == False).sum() >= 60]  # noqa: E712
+    """Which specific checks degrade with rotatable bonds, eligibility-gated.
+
+    Two corrections versus the earlier version of this figure. First, every
+    panel's denominator is `pb.eligibility.eligible(dl, check)`, not merely
+    "the check ran": a check that structurally cannot fail on a given ligand
+    (no stereocentres for `sp3_stereochemistry_preserved`, no aromatic rings
+    it inspects for the flatness checks) must not be counted as a trivial
+    pass diluting the failure rate - `sp3_stereochemistry_preserved` moves
+    from an ungated 21.4% to a gated 36.7% once ineligible ligands are
+    dropped from the denominator. Second, the four cofactor-clash checks
+    (`pb.strata.COFACTOR_CHECKS`) are excluded outright: they are conditioned
+    on the receptor (whether the complex carries a cofactor at all), not on
+    the ligand, so plotting them against a ligand-flexibility axis without
+    the `has_cofactors` gate this figure does not apply reanimates exactly
+    the retracted cofactor claim in weaker form.
+
+    Panels pool all five deep-learning methods - a per-method facet would be
+    18 checks x 5 methods, too dense to read - so this is a marginal view,
+    not a per-method one; the subtitle says so explicitly.
+    """
+    candidates = [c for c in CHECKS if c not in COFACTOR_CHECKS]
+    order = [
+        c for c in candidates
+        if (eligible(dl, c)[c] == False).sum() >= 60  # noqa: E712
+    ]
     ncols = 4
     nrows = int(np.ceil(len(order) / ncols))
     fig, axes = plt.subplots(nrows, ncols, figsize=(10.5, 2.5 * nrows), sharey=True)
     flat = axes.ravel()
 
     for ax, check in zip(flat, order):
-        ran = dl[dl[check].notna()]
+        ran = eligible(dl, check)
         rate = (
             ran.assign(failed=(ran[check] == False))  # noqa: E712
             .groupby("rotb_bin", observed=True)["failed"]
@@ -141,9 +166,16 @@ def fig_checks_by_flexibility(dl: pd.DataFrame) -> None:
 
     fig.suptitle(
         "Deep-learning failure modes, by ligand flexibility",
-        x=0.5, y=1.0, fontsize=11, weight="semibold",
+        x=0.5, y=1.08, fontsize=11, weight="semibold",
     )
-    fig.tight_layout()
+    fig.text(
+        0.5, 1.035,
+        "Pooled across all 5 deep-learning methods (marginal, not per-method) · "
+        "eligibility-gated denominators · cofactor-clash checks excluded "
+        "(receptor-, not ligand-conditioned)",
+        ha="center", fontsize=7, color=MUTED,
+    )
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.92))
     fig.savefig(paths.FIGURES / "02_checks_by_flexibility.png")
     plt.close(fig)
 

@@ -65,6 +65,14 @@ def test_cluster_bootstrap_widens_with_repeated_ligands():
     assert width(clustered) > 0.5 * width(narrow)
 
 
+def test_nan_interval_is_not_significant():
+    """An estimate whose interval could not be computed is not a finding."""
+    nan = float("nan")
+    assert not Estimate(0.8, nan, nan, nan, 5, 100, 100).significant()
+    assert Estimate(0.8, 0.2, 1.4, 0.01, 50, 100, 100).significant()
+    assert not Estimate(0.1, -0.3, 0.5, 0.6, 50, 100, 100).significant()
+
+
 def test_na_check_rows_join_neither_group():
     """A check that did not run must not count as a pass or as a failure.
 

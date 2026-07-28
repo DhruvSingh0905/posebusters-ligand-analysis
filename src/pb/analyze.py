@@ -198,22 +198,97 @@ def crystal_contact_distance_summary(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def mw_rotb_correlation(df: pd.DataFrame, methods: list[str]) -> pd.DataFrame:
-    """Spearman r(mw, n_rotatable_bonds) within each method's own ligand set.
+DESCRIPTOR_CORRELATION_PAIRS = [
+    ("mw", "n_rotatable_bonds"),
+    ("n_stereocentres", "clogp"),
+]
 
-    The central "flexibility not size" claim is only unidentified if the two
-    candidate descriptors are entangled everywhere, not just on average. This
-    checks that per method, on exactly the ligands that reach that method's
-    models (`analysis_population`, so already pose-produced).
+
+def descriptor_correlation(
+    df: pd.DataFrame,
+    methods: list[str],
+    pairs: list[tuple[str, str]] | None = None,
+) -> pd.DataFrame:
+    """Spearman rho between two descriptors, within each method's own ligand set.
+
+    Two claims in the report depend on a descriptor pair being entangled
+    throughout the ligand population, not just on average across it: the
+    central "flexibility not size" claim (`mw` vs `n_rotatable_bonds`, rho ~
+    0.73-0.74) and the sp3-stereochemistry section's aside that
+    `n_stereocentres` and `clogp` co-survive marginally because they correlate
+    (rho ~ -0.55). Both need a table to trace to, computed the same way: per
+    method, on exactly the ligands that reach that method's models
+    (`analysis_population`, so already pose-produced).
     """
+    pairs = pairs or DESCRIPTOR_CORRELATION_PAIRS
     rows = []
     for method in methods:
         sub = df[df["method"] == method].drop_duplicates(subset=["pdb_id"])
-        pair = sub[["mw", "n_rotatable_bonds"]].dropna()
+        for x, y in pairs:
+            pair = sub[[x, y]].dropna()
+            rows.append({
+                "method": method,
+                "descriptor_x": x,
+                "descriptor_y": y,
+                "n_ligands": len(pair),
+                "spearman_rho": pair[x].corr(pair[y], method="spearman"),
+            })
+    return pd.DataFrame(rows)
+
+
+def crystal_contact_sensitivity(
+    df: pd.DataFrame,
+    methods: list[str],
+    n_boot: int = 2000,
+    seed: int = 0,
+) -> pd.DataFrame:
+    """Protein-clash failure rate by crystal-contact status, with an interval on the diff.
+
+    The audit hypothesis (Task 5) was that a symmetry-mate contact would inflate
+    protein-clash failure. A bare proportion per group cannot say whether a
+    difference is signal or noise, so the difference (contact minus no-contact)
+    gets a cluster-bootstrap interval: resample `pdb_id` with replacement within
+    the method, recompute both rates, take the 2.5th/97.5th percentiles of the
+    difference. `crystal_contact` is a per-complex property, so within one
+    method's stratum a complex appears in exactly one of the two groups -
+    resampling complexes here means resampling rows directly, the same unit
+    `pb.inference.cluster_bootstrap_d` resamples elsewhere.
+    """
+    rng = np.random.default_rng(seed)
+    rows = []
+    for method in methods:
+        sub = df[(df["method"] == method) & df["crystal_contact"].notna()]
+        sub = sub[sub["no_clashes_with_protein"].notna()]
+        contact = sub[sub["crystal_contact"] == True]  # noqa: E712
+        no_contact = sub[sub["crystal_contact"] == False]  # noqa: E712
+        if contact.empty or no_contact.empty:
+            continue
+
+        contact_fail = (contact["no_clashes_with_protein"] == False).to_numpy()  # noqa: E712
+        no_contact_fail = (no_contact["no_clashes_with_protein"] == False).to_numpy()  # noqa: E712
+        n_c, n_nc = len(contact_fail), len(no_contact_fail)
+
+        rate_c = float(contact_fail.mean())
+        rate_nc = float(no_contact_fail.mean())
+        diff = rate_c - rate_nc
+
+        diffs = np.empty(n_boot)
+        for i in range(n_boot):
+            pick_c = rng.integers(0, n_c, n_c)
+            pick_nc = rng.integers(0, n_nc, n_nc)
+            diffs[i] = contact_fail[pick_c].mean() - no_contact_fail[pick_nc].mean()
+        lo, hi = np.percentile(diffs, [2.5, 97.5])
+
         rows.append({
             "method": method,
-            "n_ligands": len(pair),
-            "spearman_r": pair["mw"].corr(pair["n_rotatable_bonds"], method="spearman"),
+            "n_contact": n_c,
+            "n_no_contact": n_nc,
+            "failure_contact": rate_c,
+            "failure_no_contact": rate_nc,
+            "diff_pp": diff * 100,
+            "diff_lo_pp": float(lo) * 100,
+            "diff_hi_pp": float(hi) * 100,
+            "significant": bool(not (lo <= 0.0 <= hi)),
         })
     return pd.DataFrame(rows)
 
@@ -276,25 +351,11 @@ def main() -> None:
     model_table = pd.concat(models, ignore_index=True) if models else pd.DataFrame()
     model_table.to_csv(TABLES / "check_models.csv", index=False)
 
-    mw_rotb_correlation(df, methods).to_csv(TABLES / "mw_rotb_correlation.csv", index=False)
+    descriptor_correlation(df, methods).to_csv(TABLES / "mw_rotb_correlation.csv", index=False)
 
-    # ── crystal-contact sensitivity (Task 5's refuted-hypothesis check) ──
+    # ── crystal-contact sensitivity (Task 5's not-supported-hypothesis check) ──
     if df["crystal_contact"].notna().any():
-        rows = []
-        for method in methods:
-            for flag in (True, False):
-                sub = df[(df["method"] == method) & (df["crystal_contact"] == flag)]
-                sub = sub[sub["no_clashes_with_protein"].notna()]
-                if len(sub):
-                    rows.append({
-                        "method": method,
-                        "crystal_contact": flag,
-                        "n": len(sub),
-                        "protein_clash_failure": float(
-                            (sub["no_clashes_with_protein"] == False).mean()  # noqa: E712
-                        ),
-                    })
-        pd.DataFrame(rows).to_csv(
+        crystal_contact_sensitivity(df, methods, n_boot=2000, seed=0).to_csv(
             TABLES / "crystal_contact_sensitivity.csv", index=False
         )
         crystal_contact_distance_summary(df).to_csv(

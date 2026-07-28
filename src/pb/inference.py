@@ -31,6 +31,15 @@ class Estimate:
     n_clusters: int
 
     def significant(self) -> bool:
+        """True when the interval excludes zero.
+
+        An unestimable interval (nan bounds, from too few finite bootstrap
+        replicates) is not significant - without this guard both comparisons
+        against nan are False and the method reports significance for an
+        estimate that could not be computed at all.
+        """
+        if not (np.isfinite(self.lo) and np.isfinite(self.hi)):
+            return False
         return not (self.lo <= 0.0 <= self.hi)
 
 

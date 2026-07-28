@@ -2,6 +2,22 @@
 name = "pb-analysis"
 version = "0.1.0"
 requires-python = ">=3.11"
+dependencies = [
+    # Pinned exactly: this version's SMARTS in posebusters/config/redock.yml is
+    # copied into src/pb/descriptors.py (_TRIGONAL_DOUBLE_BOND, _AROMATIC_RING_5/6)
+    # and its check-name spelling is hardcoded in src/pb/validate.py's COLUMN_MAP.
+    # An upgrade can silently change either without this pin.
+    "posebusters==0.6.5",
+    "rdkit>=2026.3.4",
+    "pandas>=3.0.5",
+    "numpy>=2.4.6",
+    "pyarrow>=25.0.0",
+    "matplotlib>=3.11.1",
+    "statsmodels>=0.14.6",
+    "gemmi>=0.7.5",
+    "scipy>=1.17.1",
+    "pytest>=9.1.1",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
