@@ -17,6 +17,7 @@ import pandas as pd
 import statsmodels.api as sm
 from statsmodels.tools.sm_exceptions import PerfectSeparationError
 
+from .eligibility import ELIGIBILITY
 from .strata import stratum_frame
 
 # Descriptors kept after dropping near-duplicates. `heavy_atoms` (rho 0.99 with
@@ -29,12 +30,15 @@ from .strata import stratum_frame
 # correlation (max pairwise rho among the original nine was 0.83, n_rings vs
 # n_aromatic_rings), but from `mw` being well reconstructed by a combination of
 # the others (R^2 = 0.96). `mw` is the size term this project's central claim
-# is contrasted against, so it stays; `tpsa` (rho 0.78 with n_stereocentres,
-# 0.65 with mw - the TPSA/stereocentre cluster the module docstring already
-# calls out) and `n_rings` (rho 0.83 with n_aromatic_rings, a near-strict
-# superset) are the redundant members of their respective clusters and were
-# dropped instead. Re-running `variance_inflation` on the remaining eight
-# descriptors gives a maximum VIF of 8.84 (`mw`).
+# is contrasted against, so it stays deliberately despite having had the
+# highest initial VIF: it is one of the two competing hypotheses (size vs.
+# flexibility), not a nuisance covariate to be dropped for statistical
+# convenience. `tpsa` (rho 0.78 with n_stereocentres, 0.65 with mw - the
+# TPSA/stereocentre cluster the module docstring already calls out) and
+# `n_rings` (rho 0.83 with n_aromatic_rings, a near-strict superset) are the
+# redundant members of their respective clusters and were dropped instead.
+# Re-running `variance_inflation` on the remaining seven descriptors gives a
+# maximum VIF of 8.84 (`mw`).
 DESCRIPTOR_BASIS = [
     "mw",
     "n_rotatable_bonds",
@@ -74,15 +78,14 @@ def fit_check_model(
     """
     descriptors = descriptors or DESCRIPTOR_BASIS
 
-    try:
-        frame = df if "method" not in df.columns else stratum_frame(df, check, method)
-    except KeyError:
-        # `check` isn't one of the 18 registered PoseBusters checks (e.g. a
-        # synthetic check column in a unit test), so eligibility/cofactor
-        # gating has nothing to condition on. Every real check name is in
-        # `ELIGIBILITY` (asserted at import time in `pb.eligibility`), so this
-        # can only trigger off real data if that invariant is ever violated -
-        # fall back to the ungated frame rather than crashing the fit.
+    # The unit test passes a hand-built frame with a synthetic check name that
+    # is not in the real registry; real callers always use a registered check.
+    # Test membership rather than catching KeyError, so a genuine fault in the
+    # eligibility chain (e.g. a missing `has_cofactors` column) still raises
+    # instead of silently falling through to an ungated, method-pooled frame.
+    if "method" in df.columns and check in ELIGIBILITY:
+        frame = stratum_frame(df, check, method)
+    else:
         frame = df
     frame = frame.dropna(subset=[*descriptors, check, "pdb_id"])
     if frame.empty:

@@ -44,3 +44,28 @@ def test_model_recovers_the_driving_descriptor():
     assert driver["coef"] > 0
     assert driver["p_value"] < 0.01
     assert noise["p_value"] > 0.05
+
+
+def test_clustered_errors_widen_with_repeated_ligands():
+    """Each ligand appears once per method, so SEs must not shrink with copies."""
+    rng = np.random.default_rng(2)
+    n = 300
+    rot = rng.integers(0, 12, n).astype(float)
+    failed = rng.random(n) < 1 / (1 + np.exp(-(-3.0 + 0.5 * rot)))
+    base = pd.DataFrame({
+        "check_x": pd.array(~failed, dtype="boolean"),
+        "n_rotatable_bonds": rot,
+        "mw": rng.normal(400, 80, n),
+        "pdb_id": [f"P{i}" for i in range(n)],
+    })
+    duplicated = pd.concat([base] * 4, ignore_index=True)
+
+    one = fit_check_model(base, "check_x", "diffdock",
+                          descriptors=["n_rotatable_bonds", "mw"])
+    many = fit_check_model(duplicated, "check_x", "diffdock",
+                           descriptors=["n_rotatable_bonds", "mw"])
+
+    se_one = one.set_index("descriptor").loc["n_rotatable_bonds", "std_err"]
+    se_many = many.set_index("descriptor").loc["n_rotatable_bonds", "std_err"]
+    # Naive (unclustered) SEs would fall by about sqrt(4); clustering must not.
+    assert se_many > 0.7 * se_one
