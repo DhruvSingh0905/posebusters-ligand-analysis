@@ -68,6 +68,8 @@ def cluster_bootstrap_d(
     finite bootstrap cannot resolve smaller.
     """
     frame = df[[check, descriptor, cluster]].copy()
+    failed_mask = frame[check] == False  # noqa: E712
+    n_fail = int(failed_mask.sum())
     point = _d_from_frame(frame, check, descriptor)
 
     groups = {key: sub for key, sub in frame.groupby(cluster, observed=True)}
@@ -82,15 +84,14 @@ def cluster_bootstrap_d(
         if np.isfinite(value):
             replicates.append(value)
 
-    failed_mask = frame[check] == False  # noqa: E712
-    n_fail = int(failed_mask.sum())
-
     if len(replicates) < 20 or not np.isfinite(point):
         return Estimate(point, float("nan"), float("nan"), float("nan"),
                         n_fail, len(frame), len(keys))
 
     draws = np.asarray(replicates)
     lo, hi = np.percentile(draws, [2.5, 97.5])
+    # A point estimate of exactly zero falls into the upper-tail branch below;
+    # p ends up ~1 either way, so which branch handles the zero case doesn't matter.
     tail = float(np.mean(draws <= 0) if point > 0 else np.mean(draws >= 0))
     p_value = float(min(1.0, max(2 * tail, 1.0 / len(draws))))
 

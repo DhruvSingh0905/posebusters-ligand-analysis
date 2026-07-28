@@ -63,3 +63,26 @@ def test_cluster_bootstrap_widens_with_repeated_ligands():
     assert clustered.n_clusters == n           # not 5 * n
     width = lambda e: e.hi - e.lo
     assert width(clustered) > 0.5 * width(narrow)
+
+
+def test_na_check_rows_join_neither_group():
+    """A check that did not run must not count as a pass or as a failure.
+
+    `_d_from_frame` splits on `frame[check] == False`. If NA ever leaked into
+    the passing group via `~failed`, poses the checker never examined would
+    dilute the contrast and shrink every effect estimate.
+    """
+    frame = pd.DataFrame({
+        "check_x": pd.array([False, False, True, True, None, None], dtype="boolean"),
+        "descriptor": [10.0, 12.0, 1.0, 3.0, 99.0, -99.0],
+        "pdb_id": list("ABCDEF"),
+    })
+    with_na = cluster_bootstrap_d(frame, "check_x", "descriptor", n_boot=200, seed=0)
+
+    without_na = cluster_bootstrap_d(
+        frame[frame["check_x"].notna()], "check_x", "descriptor", n_boot=200, seed=0
+    )
+
+    # The two extreme NA rows would wreck the estimate if they were counted.
+    assert with_na.point == without_na.point
+    assert with_na.n_fail == 2
