@@ -16,6 +16,7 @@ import pandas as pd
 
 from . import paths
 from .build import CHECKS, CLASSICAL_METHODS, DL_METHODS
+from .inference import cohens_d
 
 log = logging.getLogger(__name__)
 
@@ -84,18 +85,6 @@ def method_summary(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows).sort_values(
         ["post_processing", "accurate"], ascending=[True, False]
     )
-
-
-def cohens_d(failing: pd.Series, passing: pd.Series) -> float:
-    """Standardised mean difference, positive when failures score higher."""
-    n_f, n_p = len(failing), len(passing)
-    if n_f < 2 or n_p < 2:
-        return np.nan
-    var_f, var_p = failing.var(ddof=1), passing.var(ddof=1)
-    pooled = ((n_f - 1) * var_f + (n_p - 1) * var_p) / (n_f + n_p - 2)
-    if not np.isfinite(pooled) or pooled <= 0:
-        return np.nan
-    return float((failing.mean() - passing.mean()) / np.sqrt(pooled))
 
 
 def check_descriptor_associations(df: pd.DataFrame) -> pd.DataFrame:
