@@ -57,8 +57,17 @@ def replicate_on_astex(
                 "descriptor": descriptor,
                 "d_posebuster": a.point,
                 "d_astex": b.point,
+                "lo_astex": b.lo,
+                "hi_astex": b.hi,
+                "n_fail_posebuster": a.n_fail,
+                "n_fail_astex": b.n_fail,
                 "n_astex_clusters": b.n_clusters,
+                # Below this many failures an effect size is not interpretable;
+                # association_grid refuses to report at all. Here the row is kept
+                # but flagged, so a thin estimate cannot be read as a firm result.
+                "thin": min(a.n_fail, b.n_fail) < 15,
                 "same_sign": np.sign(a.point) == np.sign(b.point),
+                "astex_significant": b.significant(),
                 "both_significant": a.significant() and b.significant(),
             })
     return pd.DataFrame(rows)
