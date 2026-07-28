@@ -44,26 +44,27 @@ def fetch_entry(pdb_id: str) -> Path | None:
     return target
 
 
-SEARCH_RADIUS = 5.0  # A - comfortably above the 4.0 A contact cutoff
+def min_symmetry_distance(path: Path, ccd_id: str) -> tuple[float, float] | None:
+    """Closest approach to a symmetry image: (protein-only, any non-ligand).
 
+    Two numbers because two questions. The PoseBusters clash check this exists
+    to interrogate compares the ligand against *protein* atoms, so the protein
+    -only distance is the one that speaks to it. But a ligand packed against a
+    symmetry mate's ordered water or cryoprotectant is still lattice-influenced,
+    so the broader distance is kept alongside rather than thrown away.
 
-def min_symmetry_distance(path: Path, ccd_id: str) -> float | None:
-    """Closest approach between the named ligand and any symmetry image.
-
-    Returns None when the entry has no ligand of that name, or no cell and
-    spacegroup to expand - i.e. the check could not be run at all. A large
-    value means the ligand sits well inside its own asymmetric unit; a small
-    one means it is packed against a neighbour. When no symmetry-mate atom
-    falls within SEARCH_RADIUS, the check *did* run and found no contact, so
-    this reports SEARCH_RADIUS itself as an honest lower bound on the true
-    distance rather than None - conflating "no contact" with "unresolved"
-    would misclassify the (expected) majority of true negatives as NA.
+    Returns None only when the question cannot be asked at all - no cell, no
+    spacegroup, or no ligand of that name in the entry.
     """
     structure = gemmi.read_structure(str(path))
     structure.setup_entities()
     structure.remove_hydrogens()
 
-    if structure.spacegroup_hm in ("", "P 1") and structure.cell.volume <= 0:
+    # A structure with no spacegroup or no real cell cannot be expanded, so the
+    # question is unanswerable rather than answered "no contact". P 1 is NOT
+    # disqualifying - a real P1 crystal still packs against its lattice
+    # translations, and all 22 P 1 entries here carry genuine physical cells.
+    if not structure.spacegroup_hm or structure.cell.volume <= 1.0:
         return None
 
     ligand_atoms = [
@@ -80,11 +81,17 @@ def min_symmetry_distance(path: Path, ccd_id: str) -> float | None:
     # structure, radius)` as its brief-form call suggested - the second
     # positional argument must be a gemmi.UnitCell, not the Structure itself.
     # Passing structure.cell resolves to the (model, cell, max_radius) overload.
-    search = gemmi.NeighborSearch(structure[0], structure.cell, SEARCH_RADIUS).populate()
+    radius = 5.0
+    search = gemmi.NeighborSearch(structure[0], structure.cell, radius).populate()
 
-    closest = float("inf")
+    # "Nothing found" is reported as inf, never as the search radius itself -
+    # a censored floor value would be indistinguishable from a real
+    # measurement in any downstream histogram or correlation. inf < cutoff is
+    # still False, so the boolean flag logic is unaffected.
+    closest_protein = float("inf")
+    closest_any = float("inf")
     for atom in ligand_atoms:
-        for mark in search.find_atoms(atom.pos, "\0", radius=SEARCH_RADIUS):
+        for mark in search.find_atoms(atom.pos, "\0", radius=radius):
             # image_idx 0 is the original copy; anything else is a symmetry mate
             if mark.image_idx == 0:
                 continue
@@ -94,9 +101,15 @@ def min_symmetry_distance(path: Path, ccd_id: str) -> float | None:
             position = structure.cell.find_nearest_pbc_position(
                 atom.pos, cra.atom.pos, mark.image_idx
             )
-            closest = min(closest, atom.pos.dist(position))
+            distance = atom.pos.dist(position)
+            closest_any = min(closest_any, distance)
 
-    return SEARCH_RADIUS if closest == float("inf") else float(closest)
+            info = gemmi.find_tabulated_residue(cra.residue.name)
+            is_protein = info is not None and info.is_amino_acid()
+            if is_protein:
+                closest_protein = min(closest_protein, distance)
+
+    return closest_protein, closest_any
 
 
 def build_flags(complexes: pd.DataFrame, cutoff: float = 4.0) -> pd.DataFrame:
@@ -104,22 +117,32 @@ def build_flags(complexes: pd.DataFrame, cutoff: float = 4.0) -> pd.DataFrame:
 
     `cutoff` of 4.0 A is roughly a van der Waals contact between heavy atoms;
     below it the ligand is genuinely touching a neighbouring copy.
+
+    `crystal_contact` is the primary flag - protein-only distance below
+    cutoff - and is what `build.py` and later tasks consume. `crystal_contact_any`
+    additionally counts contacts against solvent/cryoprotectant symmetry
+    mates, which are lattice packing but not what the protein-clash check
+    compares against.
     """
     paths.ensure_dirs()
     rows = []
     for record in complexes.itertuples():
         entry = fetch_entry(record.pdb_id)
-        distance = (
+        result = (
             min_symmetry_distance(entry, record.ccd_id) if entry is not None else None
         )
+        protein, any_distance = result if result is not None else (None, None)
         rows.append({
             "pdb_id": record.pdb_id,
-            "min_symmetry_distance": distance,
-            "crystal_contact": None if distance is None else distance < cutoff,
+            "min_symmetry_distance_protein": protein,
+            "min_symmetry_distance_any": any_distance,
+            "crystal_contact": None if protein is None else protein < cutoff,
+            "crystal_contact_any": None if any_distance is None else any_distance < cutoff,
         })
 
     flags = pd.DataFrame(rows)
     flags["crystal_contact"] = flags["crystal_contact"].astype("boolean")
+    flags["crystal_contact_any"] = flags["crystal_contact_any"].astype("boolean")
     return flags
 
 
@@ -133,8 +156,11 @@ def main() -> None:
 
     resolved = flags["crystal_contact"].notna().sum()
     log.info("resolved %d/%d complexes", resolved, len(flags))
-    log.info("crystal contacts: %d", int(flags["crystal_contact"].sum()))
-    log.info("unresolved (no cell, no ligand, or fetch failed): %d",
+    log.info("crystal contacts (protein-only, primary): %d",
+             int(flags["crystal_contact"].sum()))
+    log.info("crystal contacts (any non-ligand, incl. solvent/cryoprotectant): %d",
+             int(flags["crystal_contact_any"].sum()))
+    log.info("unresolved (no cell, no spacegroup, no matching ligand, or fetch failed): %d",
              int(flags["crystal_contact"].isna().sum()))
 
 

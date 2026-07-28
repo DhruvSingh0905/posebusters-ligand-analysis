@@ -210,7 +210,9 @@ def main() -> None:
                  int(flags["crystal_contact"].sum()))
     else:
         df["crystal_contact"] = pd.array([None] * len(df), dtype="boolean")
-        df["min_symmetry_distance"] = float("nan")
+        df["crystal_contact_any"] = pd.array([None] * len(df), dtype="boolean")
+        df["min_symmetry_distance_protein"] = float("nan")
+        df["min_symmetry_distance_any"] = float("nan")
         log.warning("no crystal-contact flags - run `python -m pb.crystal_contacts`")
 
     df.to_parquet(paths.JOINED_PARQUET, index=False)
