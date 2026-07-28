@@ -22,10 +22,12 @@ SET_DIRS = {
 }
 
 DESCRIPTORS_PARQUET = PROCESSED / "ligand_descriptors.parquet"
+PDB_CACHE = ROOT / "data" / "pdb_cache"
+CRYSTAL_CONTACTS_PARQUET = PROCESSED / "crystal_contacts.parquet"
 JOINED_PARQUET = PROCESSED / "poses_joined.parquet"
 JOINED_CSV = PROCESSED / "poses_joined.csv"
 
 
 def ensure_dirs() -> None:
-    for d in (PROCESSED, REPORTS, FIGURES):
+    for d in (PROCESSED, REPORTS, FIGURES, PDB_CACHE):
         d.mkdir(parents=True, exist_ok=True)

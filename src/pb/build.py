@@ -203,6 +203,16 @@ def main() -> None:
     df = add_validity(df)
     df = add_bins(df)
 
+    if paths.CRYSTAL_CONTACTS_PARQUET.exists():
+        flags = pd.read_parquet(paths.CRYSTAL_CONTACTS_PARQUET)
+        df = df.merge(flags, on="pdb_id", how="left")
+        log.info("crystal-contact flag joined: %d complexes flagged",
+                 int(flags["crystal_contact"].sum()))
+    else:
+        df["crystal_contact"] = pd.array([None] * len(df), dtype="boolean")
+        df["min_symmetry_distance"] = float("nan")
+        log.warning("no crystal-contact flags - run `python -m pb.crystal_contacts`")
+
     df.to_parquet(paths.JOINED_PARQUET, index=False)
     df.to_csv(paths.JOINED_CSV, index=False)
 

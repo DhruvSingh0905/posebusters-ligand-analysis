@@ -4,3 +4,4 @@ __pycache__/
 data/extracted/
 data/processed/
 data/raw/*.zip
+data/pdb_cache/
