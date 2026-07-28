@@ -1,0 +1,15 @@
+method,check,descriptor,d_posebuster,d_astex,n_astex_clusters,same_sign,both_significant
+diffdock,no_clashes_with_protein,n_rotatable_bonds,0.5965947491352118,0.3031552641582382,85,True,False
+unimol,energy_ratio_within_threshold,n_rotatable_bonds,1.2502461255906192,0.9609002871743321,85,True,True
+unimol,no_internal_clashes,n_rotatable_bonds,1.2596850822225634,0.8698267870419848,85,True,True
+unimol,sp3_stereochemistry_preserved,n_stereocentres,0.8398712080568933,0.2464642133590678,47,True,False
+unimol,no_clashes_with_protein,n_rotatable_bonds,0.5409638506880968,0.6059499011338614,85,True,True
+deepdock,energy_ratio_within_threshold,n_rotatable_bonds,1.1972116850643375,1.3754037421079257,84,True,True
+deepdock,no_internal_clashes,n_rotatable_bonds,1.3139555972251893,1.1361960748348068,84,True,True
+deepdock,sp3_stereochemistry_preserved,n_stereocentres,0.047447787660533904,0.03228338203527143,47,True,False
+deepdock,no_clashes_with_protein,n_rotatable_bonds,0.9163925292616468,0.6455058774260911,84,True,True
+tankbind,energy_ratio_within_threshold,n_rotatable_bonds,0.9651842769696288,1.034001062883357,85,True,True
+tankbind,no_internal_clashes,n_rotatable_bonds,0.8623201985669953,0.4731251471745347,85,True,True
+tankbind,sp3_stereochemistry_preserved,n_stereocentres,1.1795014239251695,0.16975834262463377,47,True,False
+tankbind,no_clashes_with_protein,n_rotatable_bonds,0.3737212820015108,0.21703147739035464,85,True,False
+gold,no_clashes_with_protein,n_rotatable_bonds,0.14853381915971833,-0.9993991098080559,85,False,False
