@@ -119,8 +119,14 @@ def main() -> None:
     print(replication.to_string(index=False, float_format=lambda v: f"{v:6.2f}"))
     requested = len(methods) * len(headline_pairs)
     if len(replication):
-        log.info("effects reproducing in sign on held-out Astex: %d/%d",
-                 int(replication["same_sign"].sum()), len(replication))
+        log.info(
+            "effects reproducing in sign on held-out Astex: %d/%d "
+            "(sign agreement alone is uninformative - some pairs are "
+            "indistinguishable from zero on one or both sides; see "
+            "astex_significant/both_significant for the statistically "
+            "supported count)",
+            int(replication["same_sign"].sum()), len(replication),
+        )
     log.info("pairs producing a comparison: %d/%d requested (%d skipped)",
              len(replication), requested, requested - len(replication))
 

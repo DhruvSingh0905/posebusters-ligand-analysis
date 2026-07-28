@@ -17,7 +17,7 @@ import pandas as pd
 from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm
 
 from . import paths
-from .analyze import check_descriptor_associations, outcome_by_bin, primary
+from .analyze import outcome_by_bin, primary
 from .build import CHECKS
 
 log = logging.getLogger(__name__)
@@ -148,49 +148,34 @@ def fig_checks_by_flexibility(dl: pd.DataFrame) -> None:
     plt.close(fig)
 
 
-def fig_association_heatmap(dl: pd.DataFrame) -> None:
-    """Cohen's d for every (check, descriptor) pair."""
-    assoc = check_descriptor_associations(dl)
-    grid = assoc.pivot(index="check", columns="descriptor", values="cohens_d")
+def fig_effect_forest(grid: pd.DataFrame, top_n: int = 18) -> None:
+    """Surviving effects as points with cluster-bootstrap intervals, faceted by method."""
+    surviving = grid[grid["fdr_reject"]].nlargest(top_n, "abs_d")
+    if surviving.empty:
+        log.warning("no effects survived FDR - skipping forest plot")
+        return
 
-    # order rows by how often the check fails, columns by strongest effect
-    rates = assoc.groupby("check")["failure_rate"].first().sort_values(ascending=False)
-    grid = grid.loc[rates.index]
-    grid = grid[grid.abs().max().sort_values(ascending=False).index]
+    surviving = surviving.iloc[::-1].reset_index(drop=True)
+    labels = [
+        f"{r.check.replace('_', ' ')} × {r.descriptor.replace('_', ' ')}  [{r.method}]"
+        for r in surviving.itertuples()
+    ]
+    y = np.arange(len(surviving))
 
-    limit = float(np.nanmax(np.abs(grid.to_numpy())))
-    fig, ax = plt.subplots(figsize=(11, 0.42 * len(grid) + 2.2))
-    mesh = ax.imshow(
-        grid.to_numpy(), cmap=DIVERGING,
-        norm=TwoSlopeNorm(vmin=-limit, vcenter=0, vmax=limit), aspect="auto",
-    )
+    fig, ax = plt.subplots(figsize=(9, 0.34 * len(surviving) + 1.6))
+    ax.axvline(0, color=MUTED, linewidth=1, zorder=1)
+    ax.hlines(y, surviving["lo"], surviving["hi"], color=ACCENT, linewidth=2, zorder=2)
+    ax.plot(surviving["d"], y, "o", markersize=6, color=ACCENT,
+            markeredgecolor="white", markeredgewidth=1.2, zorder=3)
 
-    ax.set_xticks(range(len(grid.columns)))
-    ax.set_xticklabels([c.replace("_", " ") for c in grid.columns],
-                       rotation=42, ha="right", fontsize=7)
-    ax.set_yticks(range(len(grid.index)))
-    ax.set_yticklabels(
-        [f"{c.replace('_', ' ')}  ({rates[c]:.0%})" for c in grid.index], fontsize=7.5
-    )
-    ax.grid(False)
-
-    for i in range(grid.shape[0]):
-        for j in range(grid.shape[1]):
-            value = grid.to_numpy()[i, j]
-            if np.isfinite(value) and abs(value) >= 0.5:
-                ax.text(j, i, f"{value:.2f}", ha="center", va="center", fontsize=6,
-                        color="white" if abs(value) > 0.75 * limit else INK)
-
-    bar = fig.colorbar(mesh, ax=ax, fraction=0.018, pad=0.012)
-    bar.set_label("Cohen's d   (positive → failing poses score higher)", fontsize=7.5)
-    bar.outline.set_visible(False)
-
-    ax.set_title(
-        "What kind of molecule trips each check\n"
-        "deep-learning poses, 428 complexes; row label shows how often the check fails",
-        fontsize=10.5, weight="semibold", loc="left", pad=12,
-    )
-    fig.savefig(paths.FIGURES / "03_association_heatmap.png")
+    ax.set_yticks(y)
+    ax.set_yticklabels(labels, fontsize=7)
+    ax.set_xlabel("Cohen's d  (cluster-bootstrap 95% CI, BH-FDR controlled)")
+    ax.yaxis.grid(False)
+    _strip(ax)
+    ax.set_title("Effects that survive eligibility gating, clustering and FDR",
+                 fontsize=10.5, weight="semibold", loc="left", pad=10)
+    fig.savefig(paths.FIGURES / "03_effect_forest.png")
     plt.close(fig)
 
 
@@ -205,7 +190,13 @@ def main() -> None:
 
     fig_gap_by_partition(raw)
     fig_checks_by_flexibility(dl)
-    fig_association_heatmap(dl)
+
+    grid_path = paths.REPORTS / "tables" / "association_grid.csv"
+    if grid_path.exists():
+        grid = pd.read_csv(grid_path)
+        fig_effect_forest(grid)
+    else:
+        log.warning("no association_grid.csv - run `python -m pb.analyze` first")
 
     for path in sorted(paths.FIGURES.glob("*.png")):
         log.info("wrote %s (%.0f kB)", path.name, path.stat().st_size / 1000)

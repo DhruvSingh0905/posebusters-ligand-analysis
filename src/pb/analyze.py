@@ -1,10 +1,14 @@
 """Find which ligand properties predict which PoseBusters check fails.
 
-Every method is run on the same 428 complexes, so the ligand set is identical
-across methods and descriptor effects are not confounded by which method saw
-which molecule. Pooling across methods within a class is therefore fair; the
-per-method breakdown at the end confirms the pooled trends are not driven by a
-single model.
+`main()` builds the gated, clustered, FDR-controlled estimates that back the
+published report: `association_grid` (Task 4 strata + Task 3 cluster
+bootstrap + BH-FDR), `check_models` (Task 6 clustered logistic models, one per
+method so no claim is a pooled artifact of whichever method contributes the
+most rows), and the crystal-contact sensitivity split (Task 5). The older
+per-descriptor helper functions below are retained only because `pb.figures`
+still uses two of them (`outcome_by_bin`, `primary`) for the two figures that
+were not retired; they are descriptive companions, not the source of any
+effect-size claim in the report - those all come from `association_grid`.
 """
 
 from __future__ import annotations
@@ -16,7 +20,9 @@ import pandas as pd
 
 from . import paths
 from .build import CHECKS, CLASSICAL_METHODS, DL_METHODS
-from .inference import cohens_d
+from .eligibility import eligible
+from .inference import cluster_bootstrap_d, cohens_d
+from .strata import stratum_frame
 
 log = logging.getLogger(__name__)
 
@@ -210,77 +216,195 @@ def per_method_trend(df: pd.DataFrame, check: str, bin_column: str) -> pd.DataFr
     return table
 
 
+# ── new for the gated/clustered/FDR-controlled report (Task 9) ────────────
+
+REPORT_PARTITIONS = ["rotb_bin", "mw_bin", "rings_bin", "stereo_bin"]
+
+
+def cofactor_retraction(
+    df: pd.DataFrame,
+    methods: list[str],
+    check: str = "no_clashes_with_organic_cofactors",
+    descriptor: str = "n_aromatic_rings",
+    n_boot: int = 2000,
+    seed: int = 0,
+) -> pd.DataFrame:
+    """The cofactor finding, pooled (as originally published) vs conditioned.
+
+    The original claim pooled every complex regardless of whether it carries a
+    cofactor at all; the check passes almost automatically when there is no
+    cofactor to clash with (Task 4), so the pooled contrast mostly measures
+    receptor composition, not ligand chemistry. Restricting to
+    `has_cofactors == True` - the only population in which this check can be
+    informative - is what `stratum_frame` does for every check in
+    `pb.strata.COFACTOR_CHECKS`. This table exists so the retraction in the
+    report traces to a real, regenerable pair of numbers rather than a remark.
+    """
+    pooled_frame = pd.concat(
+        [eligible(df[df["method"] == m], check) for m in methods], ignore_index=True
+    )
+    conditioned_frame = pd.concat(
+        [stratum_frame(df, check, m) for m in methods], ignore_index=True
+    )
+
+    pooled = cluster_bootstrap_d(pooled_frame, check, descriptor, n_boot=n_boot, seed=seed)
+    conditioned = cluster_bootstrap_d(
+        conditioned_frame, check, descriptor, n_boot=n_boot, seed=seed
+    )
+
+    def _row(variant: str, est) -> dict:
+        return {
+            "variant": variant, "check": check, "descriptor": descriptor,
+            "d": est.point, "lo": est.lo, "hi": est.hi, "p_value": est.p_value,
+            "n_fail": est.n_fail, "n_eligible": est.n_eligible,
+            "n_clusters": est.n_clusters,
+        }
+
+    return pd.DataFrame([
+        _row("pooled_unconditioned", pooled),
+        _row("cofactor_conditioned", conditioned),
+    ])
+
+
+def crystal_contact_distance_summary(df: pd.DataFrame) -> pd.DataFrame:
+    """Descriptive symmetry-contact distances, filtered by the flag itself.
+
+    `min_symmetry_distance_protein`/`_any` carry `float("inf")` for "the
+    neighbour search ran and found nothing within its radius" (Task 5) - a
+    sentinel, not a measurement. Averaging the raw column over every complex
+    mixes that sentinel with genuine 4-5 A near-misses and silently returns
+    inf/NaN. The contact-bearing group (flag == True) is safe by
+    construction: `crystal_contact` is defined as `distance < cutoff`, so
+    every True row's distance is finite by definition. Only that group is
+    aggregated here.
+    """
+    complexes = df.drop_duplicates(subset=["pdb_id"])
+    rows = []
+    for flag_col, dist_col in [
+        ("crystal_contact", "min_symmetry_distance_protein"),
+        ("crystal_contact_any", "min_symmetry_distance_any"),
+    ]:
+        if flag_col not in complexes or complexes[flag_col].isna().all():
+            continue
+        flag = complexes[flag_col]
+        contact = complexes.loc[flag.fillna(False).astype(bool), dist_col]
+        rows.append({
+            "measure": dist_col,
+            "n_resolved": int(flag.notna().sum()),
+            "n_contact": int(flag.fillna(False).sum()),
+            "mean_distance_when_contact": float(contact.mean()) if len(contact) else float("nan"),
+            "median_distance_when_contact": float(contact.median()) if len(contact) else float("nan"),
+        })
+    return pd.DataFrame(rows)
+
+
+def mw_rotb_correlation(df: pd.DataFrame, methods: list[str]) -> pd.DataFrame:
+    """Spearman r(mw, n_rotatable_bonds) within each method's own ligand set.
+
+    The central "flexibility not size" claim is only unidentified if the two
+    candidate descriptors are entangled everywhere, not just on average. This
+    checks that per method, on exactly the ligands that reach that method's
+    models (`analysis_population`, so already pose-produced).
+    """
+    rows = []
+    for method in methods:
+        sub = df[df["method"] == method].drop_duplicates(subset=["pdb_id"])
+        pair = sub[["mw", "n_rotatable_bonds"]].dropna()
+        rows.append({
+            "method": method,
+            "n_ligands": len(pair),
+            "spearman_r": pair["mw"].corr(pair["n_rotatable_bonds"], method="spearman"),
+        })
+    return pd.DataFrame(rows)
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     TABLES.mkdir(parents=True, exist_ok=True)
 
-    df = pd.read_parquet(paths.JOINED_PARQUET)
-    raw = primary(df, post="none")
-    minimised = primary(df, post="energy minimization")
-    dl = raw[raw["method_class"] == "deep learning"]
+    from .build import analysis_population
+    from .models import DESCRIPTOR_BASIS, fit_check_model
+    from .strata import association_grid, stratum_coverage
 
-    log.info("population: %d raw pose rows over %d complexes, %d methods",
-             len(raw), raw["pdb_id"].nunique(), raw["method"].nunique())
+    joined = pd.read_parquet(paths.JOINED_PARQUET)
+    df = analysis_population(joined)
+    methods = DL_METHODS + CLASSICAL_METHODS
 
+    log.info("population: %d gated pose rows over %d complexes, %d methods",
+             len(df), df["pdb_id"].nunique(), df["method"].nunique())
+
+    # ── headline table + data-hygiene tables (kept from the original run) ──
+    raw = primary(joined, post="none")
+    minimised = primary(joined, post="energy minimization")
     everything = pd.concat([raw, minimised])
     summary = method_summary(everything)
     summary.to_csv(TABLES / "method_summary.csv", index=False)
 
-    assoc = check_descriptor_associations(dl)
-    assoc.to_csv(TABLES / "check_descriptor_associations.csv", index=False)
-
-    for bin_column in BINS:
-        check_rate_by_bin(dl, bin_column).to_csv(
-            TABLES / f"check_failure_by_{bin_column}.csv", index=False
-        )
+    for bin_column in REPORT_PARTITIONS:
         outcome_by_bin(raw, bin_column).to_csv(
             TABLES / f"outcome_by_{bin_column}.csv", index=False
         )
-
-    # ── printed findings ────────────────────────────────────────────────
-    pd.set_option("display.width", 150, "display.max_columns", 30)
-    pct = lambda v: f"{v:6.3f}"  # noqa: E731
-
-    def heading(text: str) -> None:
-        print(f"\n{'─' * 78}\n{text}\n{'─' * 78}")
-
-    heading("HEADLINE — raw poses, 428 PoseBusters complexes")
-    print(
-        summary[summary.post_processing == "none"][
-            ["method", "method_class", "accurate", "valid",
-             "accurate_and_valid", "n_accurate", "invalid_given_accurate"]
-        ].to_string(index=False, float_format=pct)
+    check_rate_by_bin(raw[raw["method_class"] == "deep learning"], "rotb_bin").to_csv(
+        TABLES / "check_failure_by_rotb_bin.csv", index=False
     )
 
-    heading("WHICH LIGANDS FAIL WHICH CHECK — top 3 descriptors per check (DL, raw)")
-    top = assoc.groupby("check", group_keys=False).head(3)
-    top = top.sort_values(["failure_rate", "abs_d"], ascending=False)
-    print(
-        top[["check", "descriptor", "n_failed", "failure_rate",
-             "mean_failing", "mean_passing", "cohens_d"]]
-        .to_string(index=False, float_format=lambda v: f"{v:7.3f}")
-    )
+    # ── coverage: which of the 126 method x check strata were even estimable ──
+    coverage = stratum_coverage(df, methods)
+    coverage.to_csv(TABLES / "stratum_coverage.csv", index=False)
+    log.info("stratum coverage: %d estimated, %d skipped (of %d strata)",
+             int(coverage["estimated"].sum()), int((~coverage["estimated"]).sum()),
+             len(coverage))
 
-    heading("THE GAP — accurate-but-invalid rate by rotatable bonds")
-    print(outcome_by_bin(raw, "rotb_bin").to_string(index=False, float_format=pct))
+    # ── the gated, clustered, FDR-controlled effect grid ──
+    grid = association_grid(df, methods, DESCRIPTOR_BASIS, n_boot=2000, seed=0)
+    grid.to_csv(TABLES / "association_grid.csv", index=False)
+    log.info("association grid: %d estimates, %d survive BH-FDR",
+             len(grid), int(grid["fdr_reject"].sum()))
 
-    heading("SANITY — protein-clash failure rate by rotatable bonds, per method")
-    print(
-        per_method_trend(raw, "no_clashes_with_protein", "rotb_bin")
-        .to_string(float_format=pct)
-    )
+    # ── the retraction, evidenced ──
+    cofactor_retraction(df, methods).to_csv(TABLES / "cofactor_retraction.csv", index=False)
 
-    heading("CONTROL — is it flexibility or just size? (DL, strain failures)")
-    print("rows = molecular weight band, columns = rotatable bonds")
-    strain = stratified_check_rate(dl, "energy_ratio_within_threshold")
-    strain.to_csv(TABLES / "strain_stratified_by_mw.csv")
-    print(strain.to_string(float_format=pct))
-    print("the rate climbs left-to-right inside every weight band, so the effect")
-    print("is torsional freedom rather than molecular size.")
+    # ── per-method clustered logistic models ──
+    models = []
+    for method in methods:
+        for check in grid["check"].unique():
+            fitted = fit_check_model(df, check, method)
+            if not fitted.empty:
+                fitted.insert(0, "check", check)
+                fitted.insert(0, "method", method)
+                models.append(fitted)
+    model_table = pd.concat(models, ignore_index=True) if models else pd.DataFrame()
+    model_table.to_csv(TABLES / "check_models.csv", index=False)
 
-    descriptor_correlations(raw).to_csv(TABLES / "descriptor_correlations.csv")
+    mw_rotb_correlation(df, methods).to_csv(TABLES / "mw_rotb_correlation.csv", index=False)
 
-    print(f"\nwrote {len(list(TABLES.glob('*.csv')))} tables to {TABLES}")
+    # ── crystal-contact sensitivity (Task 5's refuted-hypothesis check) ──
+    if df["crystal_contact"].notna().any():
+        rows = []
+        for method in methods:
+            for flag in (True, False):
+                sub = df[(df["method"] == method) & (df["crystal_contact"] == flag)]
+                sub = sub[sub["no_clashes_with_protein"].notna()]
+                if len(sub):
+                    rows.append({
+                        "method": method,
+                        "crystal_contact": flag,
+                        "n": len(sub),
+                        "protein_clash_failure": float(
+                            (sub["no_clashes_with_protein"] == False).mean()  # noqa: E712
+                        ),
+                    })
+        pd.DataFrame(rows).to_csv(
+            TABLES / "crystal_contact_sensitivity.csv", index=False
+        )
+        crystal_contact_distance_summary(df).to_csv(
+            TABLES / "crystal_contact_distances.csv", index=False
+        )
+
+    print(grid[grid["fdr_reject"]]
+          .head(25)[["method", "check", "descriptor", "d", "lo", "hi",
+                     "n_fail", "n_eligible", "n_clusters"]]
+          .to_string(index=False, float_format=lambda v: f"{v:7.3f}"))
 
 
 if __name__ == "__main__":

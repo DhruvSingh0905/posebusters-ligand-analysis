@@ -1,0 +1,3 @@
+variant,check,descriptor,d,lo,hi,p_value,n_fail,n_eligible,n_clusters
+pooled_unconditioned,no_clashes_with_organic_cofactors,n_aromatic_rings,-0.2856059318169565,-0.45212911430174413,-0.11592485783772,0.0005,334,2987,428
+cofactor_conditioned,no_clashes_with_organic_cofactors,n_aromatic_rings,-0.027140237022457856,-0.20916419655510538,0.15785874889228912,0.765,293,1304,187
