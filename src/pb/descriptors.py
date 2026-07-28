@@ -28,6 +28,14 @@ METALS = {
 }
 HALOGENS = {"F", "Cl", "Br", "I"}
 
+# Counts of the substructures PoseBusters' flatness checks actually examine,
+# using that tool's own SMARTS (posebusters/config/redock.yml). Gating the
+# flatness checks on these makes eligibility mean "contains something the
+# check looks at" rather than relying on a chemically adjacent proxy.
+_TRIGONAL_DOUBLE_BOND = Chem.MolFromSmarts("[C;X3;^2](*)(*)=[C;X3;^2](*)(*)")
+_AROMATIC_RING_5 = Chem.MolFromSmarts("[ar5^2]1[ar5^2][ar5^2][ar5^2][ar5^2]1")
+_AROMATIC_RING_6 = Chem.MolFromSmarts("[ar6^2]1[ar6^2][ar6^2][ar6^2][ar6^2][ar6^2]1")
+
 
 @dataclass
 class LigandDescriptors:
@@ -64,6 +72,8 @@ class LigandDescriptors:
     n_stereocentres: int | None = None
     n_unassigned_stereocentres: int | None = None
     n_stereo_double_bonds: int | None = None
+    n_trigonal_double_bonds: int | None = None
+    n_pb_aromatic_rings: int | None = None
 
     # polarity / composition
     tpsa: float | None = None
@@ -179,6 +189,13 @@ def describe(sdf: Path, dataset: str, pdb_id: str, ccd_id: str) -> LigandDescrip
     row.n_stereocentres = centres
     row.n_unassigned_stereocentres = unassigned
     row.n_stereo_double_bonds = stereo_bonds
+
+    row.n_trigonal_double_bonds = len(
+        mol.GetSubstructMatches(_TRIGONAL_DOUBLE_BOND, uniquify=True)
+    )
+    row.n_pb_aromatic_rings = len(
+        mol.GetSubstructMatches(_AROMATIC_RING_5, uniquify=True)
+    ) + len(mol.GetSubstructMatches(_AROMATIC_RING_6, uniquify=True))
 
     row.tpsa = rdMolDescriptors.CalcTPSA(mol)
     row.clogp = Crippen.MolLogP(mol)

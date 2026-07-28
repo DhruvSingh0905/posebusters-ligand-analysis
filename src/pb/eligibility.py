@@ -10,9 +10,13 @@ failure". Every statistic in this project is computed on eligible rows only.
 
 from __future__ import annotations
 
+import logging
+
 import pandas as pd
 
 from .build import CHECKS
+
+log = logging.getLogger(__name__)
 
 # check -> descriptor that must be non-zero for the check to be able to fail.
 # None means every produced pose is eligible.
@@ -26,12 +30,14 @@ ELIGIBILITY: dict[str, str | None] = {
     "bond_lengths_within_bounds": None,
     "bond_angles_within_bounds": None,
     "no_internal_clashes": None,
-    "aromatic_ring_flatness_passes": "n_aromatic_rings",
-    "double_bond_flatness_passes": "n_stereo_double_bonds",
+    "aromatic_ring_flatness_passes": "n_pb_aromatic_rings",
+    "double_bond_flatness_passes": "n_trigonal_double_bonds",
     "energy_ratio_within_threshold": None,
-    # cofactor checks are gated by the complex, not the ligand - handled by
-    # stratification in pb.analyze rather than here, because `has_cofactors`
-    # describes the receptor.
+    # The cofactor checks pass trivially on complexes that have no cofactors -
+    # 4,281 of 4,410 such rows - so `eligible()` alone does not make them
+    # meaningful. They are gated by the receptor, not the ligand, so the
+    # conditioning lives in pb.strata.COFACTOR_CHECKS (Task 4) instead. Do not
+    # report these four checks from `eligible()` output alone.
     "no_clashes_with_protein": None,
     "no_clashes_with_organic_cofactors": None,
     "no_clashes_with_inorganic_cofactors": None,
@@ -51,7 +57,15 @@ def eligible_mask(df: pd.DataFrame, check: str) -> pd.Series:
     mask = df[check].notna()
     gate = ELIGIBILITY[check]
     if gate is not None:
-        mask = mask & (df[gate].fillna(0) > 0)
+        values = df[gate]
+        unknown = int(values.isna().sum())
+        if unknown:
+            log.warning(
+                "%s: %d rows have an unknown %s and are excluded from the "
+                "eligible set - check the descriptor stage",
+                check, unknown, gate,
+            )
+        mask = mask & (values > 0)
     return pd.Series(mask, index=df.index).fillna(False).astype(bool)
 
 

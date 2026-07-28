@@ -9,7 +9,7 @@ def _frame():
         "aromatic_ring_flatness_passes": pd.array([True, True, None], dtype="boolean"),
         "no_clashes_with_protein": pd.array([True, False, True], dtype="boolean"),
         "n_stereocentres": [0, 3, 2],
-        "n_aromatic_rings": [0, 1, 2],
+        "n_pb_aromatic_rings": [0, 1, 2],
     })
 
 
@@ -38,3 +38,24 @@ def test_eligible_returns_a_subframe():
 def test_every_check_has_an_eligibility_entry():
     from pb.build import CHECKS
     assert set(ELIGIBILITY) == set(CHECKS)
+
+
+def test_unknown_gate_value_is_not_eligible(caplog):
+    """A NaN descriptor cannot be shown eligible, and says so out loud."""
+    frame = pd.DataFrame({
+        "sp3_stereochemistry_preserved": pd.array([True, False], dtype="boolean"),
+        "n_stereocentres": [float("nan"), 2.0],
+    })
+    with caplog.at_level("WARNING"):
+        mask = eligible_mask(frame, "sp3_stereochemistry_preserved")
+    assert list(mask) == [False, True]
+    assert "unknown n_stereocentres" in caplog.text
+
+
+def test_failing_check_on_zero_gate_is_still_excluded():
+    """The gate wins over the outcome - a structural zero is never eligible."""
+    frame = pd.DataFrame({
+        "sp3_stereochemistry_preserved": pd.array([False], dtype="boolean"),
+        "n_stereocentres": [0],
+    })
+    assert list(eligible_mask(frame, "sp3_stereochemistry_preserved")) == [False]
