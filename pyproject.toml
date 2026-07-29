@@ -19,6 +19,9 @@ dependencies = [
     "pytest>=9.1.1",
 ]
 
+[project.scripts]
+pb = "pb.cli:main"
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
