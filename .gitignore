@@ -1,7 +1,17 @@
+# Environment
 .venv/
 __pycache__/
 *.pyc
+
+# Unrelated work that lives in this directory but is not part of the project
+ligandtest/
+cd/
+
+# Source data and everything derived from it. `pb.acquire` re-fetches the
+# archive from Zenodo and `pb.crystal_contacts` re-fetches mmCIF entries from
+# RCSB, so none of this needs to be tracked; only the 1.2 MB results CSV is,
+# to pin the analysis inputs.
+data/raw/*.zip
 data/extracted/
 data/processed/
-data/raw/*.zip
 data/pdb_cache/
