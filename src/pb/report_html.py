@@ -255,6 +255,10 @@ header{padding:64px 0 34px;border-bottom:1px solid var(--rule);margin-bottom:46p
 h1{font-weight:400;font-size:clamp(32px,5vw,50px);line-height:1.06;letter-spacing:-.015em;
   margin:18px 0 0;text-wrap:balance;max-width:20ch}
 .standfirst{color:var(--ink-2);font-size:18.5px;margin:16px 0 0;max-width:60ch}
+.byline{font-size:14.5px;color:var(--ink-2);margin:16px 0 0;max-width:64ch}
+.byline a{color:var(--accent);text-decoration:none;border-bottom:1px solid transparent}
+.byline a:hover{border-bottom-color:currentColor}
+.byline a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 section{margin:0 0 54px}
 h2{font-family:var(--mono);font-weight:600;font-size:12px;letter-spacing:.15em;
   text-transform:uppercase;color:var(--ink-3);margin:0 0 10px;padding-bottom:8px;
@@ -323,8 +327,11 @@ def build() -> Path:
 <div class="wrap">
 
 <header>
-  <div class="eyebrow"><span>PoseBusters Benchmark</span><span>428 complexes · 7 methods</span><span>Ligand-conditioned re-analysis</span></div>
+  <div class="eyebrow"><span>PoseBusters Benchmark</span><span>Ligand-conditioned re-analysis</span><span>Independent work</span></div>
   <h1>Which molecules break docking predictions</h1>
+  <p class="byline">Dhruv Singh · <a href="https://www.linkedin.com/in/dhruv-singh-933154265/">LinkedIn</a>
+  · <a href="https://github.com/DhruvSingh0905/posebusters-ligand-analysis">Code and data</a> · Independent exploratory work, not affiliated with,
+  funded by, or endorsed by any institution or laboratory.</p>
   <p class="standfirst">The published benchmark records which docking <em>method</em> fails
   which physical-validity check. It carries no chemistry about the <em>molecule</em> being
   docked. This joins RDKit descriptors from the crystal ligands onto every pose and asks what

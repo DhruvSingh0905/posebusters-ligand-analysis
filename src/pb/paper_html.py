@@ -54,8 +54,12 @@ header{padding:70px 0 0;text-align:center}
 h1{font-weight:400;font-size:clamp(28px,4.4vw,40px);line-height:1.14;letter-spacing:-.012em;
   margin:0 auto;max-width:22ch;text-wrap:balance}
 .sub{color:var(--ink-2);font-size:18px;margin:14px auto 0;max-width:52ch;font-style:italic}
-.meta{font-family:var(--mono);font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;
-  color:var(--ink-3);margin-top:22px}
+.byline{font-size:15px;color:var(--ink-2);margin:20px 0 0}
+.byline a{color:var(--accent);text-decoration:none;border-bottom:1px solid transparent}
+.byline a:hover{border-bottom-color:currentColor}
+.byline a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.affil{font-family:var(--mono);font-size:10.5px;line-height:1.5;color:var(--ink-3);
+  margin:12px auto 0;max-width:56ch}
 .rule{height:1px;background:var(--rule);margin:34px 0 0}
 
 /* ── abstract ────────────────────────────────────────────────── */
@@ -132,7 +136,9 @@ footer a{color:var(--accent);text-decoration:none}
   .wrap{max-width:none}
   header{padding-top:0}
   h1{font-size:20pt}
-  .sub{font-size:11pt}
+    .sub{font-size:11pt}
+  .byline{font-size:9.5pt}
+  .affil{font-size:7.5pt}
   h2{font-size:13pt;margin-top:20px}
   h3{font-size:10.5pt}
   section{break-inside:auto}
@@ -181,7 +187,10 @@ def build() -> Path:
   <h1>What breaks a docking pose</h1>
   <p class="sub">Which ligand properties predict which physical-validity failure,
   across the PoseBusters benchmark</p>
-  <div class="meta">428 complexes · 7 docking methods · 7,695 poses</div>
+  <p class="byline">Dhruv Singh · <a href="https://www.linkedin.com/in/dhruv-singh-933154265/">LinkedIn</a>
+  · <a href="https://github.com/DhruvSingh0905/posebusters-ligand-analysis">Code and data</a></p>
+  <p class="affil">Independent exploratory work. Not affiliated with, funded by, or
+  endorsed by any institution, laboratory or research group.</p>
   <div class="rule"></div>
 </header>
 
@@ -430,8 +439,12 @@ body{margin:0;padding:0 22px 80px;background:#FFFFFF;color:#101418;
 header{padding:72px 0 0}
 h1{font-weight:400;font-size:clamp(30px,5vw,42px);line-height:1.1;margin:0;letter-spacing:-.015em}
 .sub{color:#39424A;font-size:18px;margin:14px 0 0;font-style:italic}
-.meta{font:10.5px/1 ui-monospace,"SF Mono",Menlo,monospace;letter-spacing:.13em;
-  text-transform:uppercase;color:#727C84;margin-top:20px}
+.byline{font-size:15px;color:#39424A;margin:18px 0 0}
+.byline a{color:#0A5F7A;text-decoration:none;border-bottom:1px solid transparent}
+.byline a:hover{border-bottom-color:currentColor}
+.byline a:focus-visible{outline:2px solid #0A5F7A;outline-offset:2px}
+.affil{font:10.5px/1.55 ui-monospace,"SF Mono",Menlo,monospace;color:#727C84;
+  margin:12px 0 0;max-width:56ch}
 hr{border:0;border-top:1px solid #B9C2C7;margin:30px 0}
 .cta{display:flex;gap:10px;flex-wrap:wrap;margin:26px 0 34px}
 .cta a{display:inline-block;padding:11px 18px;border:1px solid #0A5F7A;border-radius:2px;
@@ -475,7 +488,10 @@ failure, across the PoseBusters benchmark.">
   <h1>What breaks a docking pose</h1>
   <p class="sub">Which ligand properties predict which physical-validity failure,
   across the PoseBusters benchmark</p>
-  <div class="meta">428 complexes · 7 docking methods · 7,695 poses</div>
+  <p class="byline">Dhruv Singh · <a href="https://www.linkedin.com/in/dhruv-singh-933154265/">LinkedIn</a>
+  · <a href="https://github.com/DhruvSingh0905/posebusters-ligand-analysis">Code and data</a></p>
+  <p class="affil">Independent exploratory work. Not affiliated with, funded by, or
+  endorsed by any institution, laboratory or research group.</p>
 </header>
 
 <hr>
