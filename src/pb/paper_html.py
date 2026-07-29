@@ -97,6 +97,19 @@ tbody tr:last-child td{border-bottom:none}
 .yes{color:var(--pass);font-weight:600}
 .no{color:var(--ink-3)}
 
+/* ── plain-language takeaways ─────────────────────────────────── */
+.take{margin:22px 0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.take .row{display:flex;gap:16px;padding:13px 2px;border-bottom:1px solid var(--rule-soft);align-items:baseline}
+.take .row:last-child{border-bottom:none}
+.take .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--accent);white-space:nowrap;flex:0 0 108px;padding-top:3px}
+.take .v{flex:1}
+.take .v b{font-weight:600}
+.take .v em{color:var(--ink-3);font-style:normal;font-family:var(--mono);font-size:11.5px}
+.close{border-left:3px solid var(--accent);padding:4px 0 4px 20px;margin:26px 0 0}
+.close p{margin:0 0 10px}
+.close p:last-child{margin:0}
+
 /* ── figures ─────────────────────────────────────────────────── */
 figure{margin:26px 0}
 figure img{display:block;width:100%;height:auto;border:1px solid var(--rule-soft);border-radius:2px}
@@ -204,30 +217,50 @@ def build() -> Path:
          "odds ratio per standard deviation, other descriptors held fixed.", sig_table)}
 
 <section>
-  <p><strong>Internal geometry is a flexibility problem.</strong> Rotatable-bond count is
-  significant for both strain energy and internal clashes in 4 of 5 methods, with consistent
-  sign and odds ratios of 1.6–9.5. Molecular weight is also significant for internal clashes
-  in 3 of 5, but DeepDock's coefficient is inverted — so flexibility is the consistent driver
-  where size is not.</p>
-  <p><strong>Chirality is a stereocentre-count problem</strong> and nothing else: an odds ratio
-  of 10.4 for TankBind and 4.3 for Uni-Mol, with no other descriptor significant for either.
-  Inverting a stereocentre does not produce a distorted molecule — it produces a different
-  compound, often the inactive enantiomer.</p>
-  <p><strong>One method's bond geometry is near-deterministic in size.</strong> The single
-  largest effects in the study are Uni-Mol's: molecular weight carries an odds ratio of 47 on
-  bond lengths and 103 on bond angles, per standard deviation, on 269 and 284 failures
-  respectively (<em>p</em> &lt; 10<sup>−8</sup>). Uni-Mol fails bond geometry on essentially
-  every large ligand. The wide range in Table 1's bond-length row spans that estimate and
-  TankBind's far smaller one — they are different magnitudes, not a tight interval.</p>
-  <p><strong>Cofactor clashes go the other way.</strong> Within the 187 cofactor-bearing
-  complexes, molecular weight has an odds ratio of 0.17–0.31 in 4 of 5 methods — smaller
-  ligands clash <em>more</em> — while stereocentre count raises failure 2.3–3.2×.</p>
-  <p><strong>The most common failure has no signature at all.</strong> Steric clash with the
-  protein fails on roughly 84% of deep-learning poses, yet only {sig['clash_sig']} of
-  {sig['clash_total']} coefficients across {sig['clash_methods']} methods reach significance,
-  and no descriptor agrees on more than two. The dominant failure mode is not about the
-  molecule; the failures that <em>discriminate</em> between molecules — strain, self-clash,
-  chirality — are predictable from three descriptors.</p>
+  <p>In plain terms, the table says four things.</p>
+</section>
+
+<div class="take">
+  <div class="row"><div class="k">Floppy → strained</div><div class="v">
+    <b>The more rotatable bonds a molecule has, the more likely its pose is internally
+    strained or clashing with itself.</b> More torsions means more ways to fold a molecule
+    into itself. This is the most reproducible signal here — it holds for 4 of 5 methods on
+    both checks, and it replicates on held-out data.
+    <em>OR 1.6–9.5 per SD</em></div></div>
+
+  <div class="row"><div class="k">Chiral → flipped</div><div class="v">
+    <b>Molecules with many stereocentres get their chirality inverted.</b> If a model places
+    each centre correctly at random, getting all of them right gets rapidly less likely as
+    they accumulate. This is the failure that matters most in practice: an inverted centre is
+    not a distorted molecule but a different compound, often the inactive enantiomer.
+    <em>OR 4.3–10.4 per SD</em></div></div>
+
+  <div class="row"><div class="k">Small → cofactors</div><div class="v">
+    <b>Small ligands collide with cofactors; large ones do not.</b> The opposite of the
+    intuitive direction, and the best-corroborated result in the table — PoseBusters tests
+    cofactor clash twice, by atom distance and by volume overlap, and the two independent
+    tests agree per method. A likely reading is that a large ligand cannot be placed in a
+    cofactor-occupied pocket at all, while a small one is placed into the contested space.
+    <em>OR 0.15–0.35 per SD</em></div></div>
+
+  <div class="row"><div class="k">Protein clash</div><div class="v">
+    <b>Nothing about the ligand predicts the most common failure of all.</b> Steric clash
+    with the protein fails on roughly 84% of deep-learning poses and was fitted on more
+    methods than any other check, yet only 5 of 42 coefficients reach significance and no
+    property agrees across more than two methods.
+    <em>no signature</em></div></div>
+</div>
+
+<section>
+  <p>Two properties predict essentially nothing, anywhere: <strong>aromatic ring count</strong>
+  (significant in 4 of 41 fitted models) and <strong>halogen count</strong> (2 of 41). If the
+  expectation was that aromatic-heavy or halogenated ligands are systematically harder to
+  dock validly, this data does not support it.</p>
+  <p>Molecular weight also appears on the internal-geometry checks (3 of 5 methods for
+  self-clash), but less consistently than rotatable-bond count and in the same direction, and
+  the two are correlated — see §2. Smaller effects in Table 1 worth noting: formal charge
+  <em>reduces</em> self-clash failure, plausibly because charged groups sit at the ends of a
+  molecule and repel each other rather than folding inward.</p>
 </section>
 
 {_fig('03_effect_forest.png', 1,
@@ -311,7 +344,21 @@ def build() -> Path:
 </section>
 
 <section>
-  <h2><span class="n">6</span>Method</h2>
+  <h2><span class="n">6</span>What this means in practice</h2>
+  <div class="close">
+    <p>If you want to know whether a docking method will return a <em>usable</em> pose for a
+    particular molecule, three properties carry the information: <strong>rotatable bonds</strong>
+    (predicts strain and self-clash), <strong>stereocentres</strong> (predicts chirality
+    inversion), and <strong>size</strong> (predicts cofactor collisions, in the counterintuitive
+    direction). Flexible, stereocentre-rich ligands are the ones to distrust.</p>
+    <p>But the single most common failure — steric clash with the protein — is not predictable
+    from the ligand at all. No amount of screening molecules by their properties will avoid it,
+    because it is not a property of the molecule. That one has to be fixed in the method.</p>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">7</span>Method</h2>
   <p>27 RDKit<sup><a href="#r4">4</a></sup> descriptors per crystal ligand (size, flexibility,
   ring system, stereochemistry, polarity, composition), joined to the published results
   table<sup><a href="#r2">2</a></sup> on PDB code. Blank check values in that table mean the
