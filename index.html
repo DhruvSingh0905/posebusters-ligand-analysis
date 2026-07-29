@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>What breaks a docking pose</title>
+<meta name="description" content="Which ligand properties predict which physical-validity
+failure, across the PoseBusters benchmark.">
+<style>
+*{box-sizing:border-box}
+body{margin:0;padding:0 22px 80px;background:#FFFFFF;color:#101418;
+  font:17px/1.6 "Iowan Old Style","Charter","Palatino Linotype",Palatino,Georgia,serif;
+  -webkit-font-smoothing:antialiased}
+.w{max-width:660px;margin:0 auto}
+header{padding:72px 0 0}
+h1{font-weight:400;font-size:clamp(30px,5vw,42px);line-height:1.1;margin:0;letter-spacing:-.015em}
+.sub{color:#39424A;font-size:18px;margin:14px 0 0;font-style:italic}
+.meta{font:10.5px/1 ui-monospace,"SF Mono",Menlo,monospace;letter-spacing:.13em;
+  text-transform:uppercase;color:#727C84;margin-top:20px}
+hr{border:0;border-top:1px solid #B9C2C7;margin:30px 0}
+.cta{display:flex;gap:10px;flex-wrap:wrap;margin:26px 0 34px}
+.cta a{display:inline-block;padding:11px 18px;border:1px solid #0A5F7A;border-radius:2px;
+  color:#0A5F7A;text-decoration:none;font:12px/1 ui-monospace,"SF Mono",Menlo,monospace;
+  letter-spacing:.09em;text-transform:uppercase}
+.cta a.primary{background:#0A5F7A;color:#fff}
+.cta a:hover{background:#0A5F7A;color:#fff}
+.cta a:focus-visible{outline:2px solid #0A5F7A;outline-offset:3px}
+table{border-collapse:collapse;width:100%;margin:8px 0 26px;
+  font:12.5px/1.45 ui-monospace,"SF Mono",Menlo,monospace;font-variant-numeric:tabular-nums;
+  border-top:1.5px solid #101418;border-bottom:1.5px solid #101418}
+td{padding:9px 10px;border-bottom:1px solid #E2E7E9;vertical-align:top}
+tr:last-child td{border-bottom:none}
+td:last-child{text-align:right;white-space:nowrap;color:#39424A}
+b{font-weight:600}
+p{margin:0 0 15px}
+footer{margin-top:36px;padding-top:18px;border-top:1px solid #B9C2C7;
+  font:11.5px/1.65 ui-monospace,"SF Mono",Menlo,monospace;color:#727C84}
+footer a{color:#0A5F7A;text-decoration:none}
+@media (max-width:520px){td:last-child{white-space:normal}}
+</style>
+</head><body><div class="w">
+
+<header>
+  <h1>What breaks a docking pose</h1>
+  <p class="sub">Which ligand properties predict which physical-validity failure,
+  across the PoseBusters benchmark</p>
+  <div class="meta">428 complexes · 7 docking methods · 7,695 poses</div>
+</header>
+
+<hr>
+
+<div class="cta">
+  <a class="primary" href="reports/paper.pdf">Read the paper (PDF)</a>
+  <a href="reports/paper.html">HTML</a>
+  <a href="https://github.com/DhruvSingh0905/posebusters-ligand-analysis">Source</a>
+</div>
+
+<p>PoseBusters scores docking with 18 physical-validity checks and reports failure rates per
+<em>method</em>. Its results table records nothing about the molecule being docked, so it
+cannot say which ligands are hard. This computes 27 RDKit descriptors for the 428 benchmark
+ligands, joins them to all 7,695 published poses, and models each check against ligand
+chemistry.</p>
+
+<table>
+  <tr><td>Internal-geometry failure scales with <b>torsional degrees of freedom</b></td>
+      <td>OR 1.6–9.5 / SD</td></tr>
+  <tr><td>sp³ chirality failure scales with <b>stereocentre count</b>, and nothing else</td>
+      <td>OR 4.3–10.4 / SD</td></tr>
+  <tr><td>Cofactor clash scales <b>inversely with molecular weight</b></td>
+      <td>OR 0.15–0.35 / SD</td></tr>
+  <tr><td>Protein clash, the largest failure term, has <b>no ligand-level predictor</b></td>
+      <td>5 of 42 coefficients</td></tr>
+</table>
+
+<p>Two limits bound all of it. Only 41 of 126 method × check strata
+carry enough failures to model, and molecular weight and rotatable-bond count are correlated at
+ρ ≈ 0.73–0.74 throughout, so where both are significant they cannot be separated.</p>
+
+<p>The analysis is verified two ways: re-running the PoseBusters checker over all 513 crystal
+structures reproduces the published reference rows to 99.8% worst-case agreement,
+and 8 of 14 shortlisted effects replicate on the held-out
+85-complex Astex Diverse Set.</p>
+
+<footer>
+  <p>Every table in the paper is read from the analysis outputs at render time and every figure
+  inlined from its original, so the document cannot diverge from the analysis it reports.
+  Regenerate the whole thing with <code>python run.py --fast</code>.</p>
+  <p>Data: Buttenschoen, Morris &amp; Deane, <em>Chem Sci</em> <b>15</b>, 3130 (2024),
+  <a href="https://doi.org/10.1039/D3SC04185A">doi:10.1039/D3SC04185A</a></p>
+</footer>
+
+</div></body></html>
