@@ -15,3 +15,4 @@ data/raw/*.zip
 data/extracted/
 data/processed/
 data/pdb_cache/
+*.egg-info/
