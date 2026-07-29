@@ -154,371 +154,204 @@ def build() -> Path:
     cov_table, cov = coverage()
     rep_table, rep = replication()
     val_table, val = validation()
-    cf = cofactor()
     sig_table, sig = check_signatures()
     n_skipped = cov["total"] - cov["estimated"]
 
     grid = pd.read_csv(TABLES / "association_grid.csv")
     n_est, n_sig = len(grid), int(grid.fdr_reject.sum())
 
-    html = f"""<title>Ligand determinants of physical-validity failure in protein–ligand docking</title>
+    html = f"""<title>What breaks a docking pose: ligand determinants of physical-validity failure</title>
 <style>{CSS}</style>
 <div class="wrap">
 
 <header>
-  <h1>Ligand determinants of physical-validity failure in protein–ligand docking</h1>
-  <p class="sub">A re-analysis of the PoseBusters benchmark conditioned on the molecule
-  rather than the method</p>
+  <h1>What breaks a docking pose</h1>
+  <p class="sub">Which ligand properties predict which physical-validity failure,
+  across the PoseBusters benchmark</p>
   <div class="meta">428 complexes · 7 docking methods · 7,695 poses</div>
   <div class="rule"></div>
 </header>
 
 <div class="abstract">
-  <h2>Abstract</h2>
-  <p>Docking methods are judged by whether a predicted ligand pose lands within 2 Å of the
-  crystal structure, but a pose can be accurate and still be physically impossible. The
-  PoseBusters benchmark<sup><a href="#r1">1</a></sup> quantifies this with 18 validity checks
-  and reports failure rates per docking method. It records nothing about the molecules being
-  docked, so it cannot say which ligands are hard.</p>
-  <p>We computed 27 RDKit descriptors for each of the 428 benchmark ligands, joined them to
-  all 7,695 published poses, and estimated the association between ligand chemistry and each
-  validity failure. Estimates are restricted to ligands capable of failing the check in
-  question, computed per docking method, bootstrapped over ligands rather than poses, and
-  corrected for multiple testing.</p>
-  <p><strong>Each failure mode has a distinct ligand signature.</strong> Strain-energy and
-  internal-clash failures are driven by torsional flexibility (rotatable bonds significant in
-  4 of 5 methods, odds ratio 1.6–9.5 per standard deviation). Chirality inversion is driven
-  by stereocentre count alone (odds ratio up to 10.4). Cofactor clashes afflict <em>small</em>,
-  stereocentre-rich ligands (molecular weight odds ratio 0.17–0.31). The most frequent failure
-  of all — steric clash with the protein — has <strong>no ligand signature</strong>: 5 of 42
-  coefficients reach significance and none replicates across methods, indicating a property of
-  the method rather than the molecule.</p>
-  <p>Two boundaries constrain interpretation. Only <strong>{cov['estimated']} of
-  {cov['total']}</strong> method × check strata carry enough failures to estimate at all, and
-  molecular weight and rotatable-bond count are correlated at ρ ≈ 0.73–0.74 within every
-  method's ligand set, so where both are significant they cannot be separated. Removing
-  complexes whose ligand contacts a crystallographic symmetry mate does <strong>not</strong>
-  reduce protein-clash failure.</p>
-  <p>We validate the analysis by re-running the checker itself on all 513 crystal structures
-  ({val['worst']:.1%} worst-case agreement with the published reference rows) and test
-  generalisation on the 85-complex Astex Diverse Set, where {rep['replicated']} of
-  {rep['n']} shortlisted effects replicate with statistical support.</p>
+  <h2>Summary</h2>
+  <p>Docking is scored by whether a predicted pose lands within 2 Å of the crystal structure,
+  but an accurate pose can still be physically impossible. PoseBusters<sup><a href="#r1">1</a></sup>
+  measures this with 18 validity checks and reports failure per <em>method</em>. It records
+  nothing about the molecules, so it cannot say which ligands are hard. We computed 27 RDKit
+  descriptors for the 428 benchmark ligands, joined them to all 7,695 published poses, and
+  modelled each check against ligand chemistry.</p>
+  <p><strong>Each failure mode has its own signature.</strong> Strain energy and internal
+  clashes track torsional flexibility; chirality inversion tracks stereocentre count alone;
+  cofactor clashes afflict <em>small</em>, stereocentre-rich ligands. The most frequent failure
+  of all — steric clash with the protein — has <strong>no ligand signature</strong>, making it a
+  property of the method rather than the molecule.</p>
+  <p><strong>Two limits.</strong> Only {cov['estimated']} of {cov['total']} method × check
+  strata carry enough failures to model, and molecular weight and rotatable-bond count are
+  correlated at ρ ≈ 0.73–0.74 throughout, so where both are significant they cannot be
+  separated.</p>
 </div>
 
 <section>
-  <h2><span class="n">1</span>Introduction</h2>
-  <p>Molecular docking predicts where a small molecule binds a protein. Performance is
-  conventionally summarised by the fraction of predictions within 2 Å root-mean-square
-  deviation (RMSD) of the crystallographic pose. RMSD is a positional measure: it compares
-  where atoms are, and says nothing about whether their arrangement is chemically possible.</p>
-  <p>PoseBusters<sup><a href="#r1">1</a></sup> addressed this by pairing RMSD with 18 explicit
-  physical checks — bond lengths and angles within distance-geometry bounds, aromatic rings
-  planar, tetrahedral stereochemistry preserved, no internal or intermolecular steric clashes,
-  internal strain energy within a factor of 100 of a generated conformer ensemble. Applied to
-  seven docking methods, it showed that deep-learning methods with competitive RMSD produce
-  poses that frequently fail these checks, while classical search methods do not.</p>
-  <p>That result is method-conditioned. The published results table carries a PDB identifier,
-  a chemical-component identifier, a cofactor flag and a sequence identity, and nothing about
-  the molecule's chemistry. The complementary question — which <em>ligands</em> break which
-  methods — has not been asked of this data, though the crystal ligands are distributed
-  alongside the results as unanalysed structure files.</p>
-  <p>We ask it here, and find that the answer is constrained less by the data's size than by
-  collinearity among the descriptors that would answer it.</p>
+  <h2><span class="n">1</span>What breaks which check</h2>
+  <p>Each check was modelled by logistic regression on seven decorrelated descriptors entered
+  together, fitted separately per docking method, with standard errors clustered on ligand.
+  Table 1 lists every descriptor reaching significance for at least two methods. Odds ratios
+  are per standard deviation with the other six held fixed, so a value below 1 means failure
+  becomes <em>less</em> likely as the property rises.</p>
 </section>
 
-<section>
-  <h2><span class="n">2</span>Data and methods</h2>
-
-  <h3><span class="n">2.1</span>Data</h3>
-  <p>The PoseBusters paper data<sup><a href="#r2">2</a></sup> comprises 428 protein–ligand
-  complexes released after 2021 (the PoseBusters Benchmark set), 85 complexes from the Astex
-  Diverse Set<sup><a href="#r3">3</a></sup>, and a results table giving every validity check
-  and RMSD for seven docking methods — AutoDock Vina, CCDC Gold, DeepDock, DiffDock, EquiBind,
-  TankBind and Uni-Mol — with and without post-prediction energy minimisation. The predicted
-  poses themselves were not released, so the published check results are the analysis input.
-  Unless stated, results are for raw (un-minimised) poses on the 428-complex benchmark set.</p>
-  <p>Two encoding properties of that table govern everything downstream. A blank check value
-  means the check <em>was not run</em>, not that it failed; both flatness columns are blank
-  for all 2,996 minimised rows. And 85 rows have every check blank because the method
-  produced no pose at all — treating those as passing inflates validity rates. Both are
-  handled explicitly.</p>
-
-  <h3><span class="n">2.2</span>Descriptors</h3>
-  <p>27 descriptors were computed per crystal ligand with RDKit<sup><a href="#r4">4</a></sup>:
-  size (molecular weight, heavy atoms), flexibility (rotatable bonds, fraction sp³, amide
-  bonds), ring system (total, aromatic, aliphatic, largest ring, spiro and bridgehead atoms),
-  stereochemistry (tetrahedral centres, stereogenic double bonds), and polarity and
-  composition (TPSA, cLogP, donors, acceptors, formal charge, heteroatoms, halogens). All 513
-  ligands parsed and sanitised without error. Descriptors describe the crystal ligand, so they
-  are properties of the molecule that was docked, independent of which method produced a pose.</p>
-
-  <h3><span class="n">2.3</span>Eligibility</h3>
-  <p>A ligand with no stereocentres cannot fail the tetrahedral-chirality check; one with no
-  aromatic ring cannot fail aromatic-ring flatness. Including such ligands in a check's
-  denominator deflates its failure rate and inflates any effect measured against the gating
-  descriptor, because the comparison then encodes whether the check <em>can</em> fire rather
-  than whether the molecule induces failure. Each check is therefore gated on the count of the
-  substructure it inspects, using the checker's own SMARTS patterns where applicable. Gating
-  raises the observed chirality-failure rate from 21.4% to 36.7% and reduces its association
-  with stereocentre count from <em>d</em> = 1.09 to <em>d</em> = 0.35.</p>
-  <p>The four cofactor-clash checks are conditioned differently: they pass almost
-  automatically on complexes that contain no cofactor (2.4% failure versus 22.5% where one is
-  present), so they are restricted to cofactor-bearing complexes, which is a property of the
-  receptor rather than the ligand.</p>
-
-  <h3><span class="n">2.4</span>Estimation</h3>
-  <p>Effect sizes are Cohen's <em>d</em> between failing and passing poses, estimated
-  separately for each docking method — the methods differ by more than an order of magnitude
-  in competence, so pooling them describes the weakest as much as the strongest. Confidence
-  intervals come from a bootstrap that resamples <em>ligands</em>, not poses: each ligand
-  contributes one pose per method, so treating 2,140 rows as independent observations of 428
-  ligands would report intervals roughly √5 too narrow. Strata with fewer than 15 failures or
-  fewer than 30 distinct ligands are not estimated. Across the full grid of estimates,
-  <em>p</em>-values are corrected by the Benjamini–Hochberg procedure<sup><a href="#r5">5</a></sup>
-  at α = 0.05, treating every estimate as one family.</p>
-  <p>Because marginal comparisons cannot separate correlated descriptors, each check is also
-  modelled by logistic regression on a decorrelated descriptor basis with standard errors
-  clustered on ligand. Where the marginal estimates and the models disagree, the models
-  govern.</p>
-
-  <h3><span class="n">2.5</span>Crystal contacts</h3>
-  <p>The benchmark's journal version reports on 308 of the 428 complexes, excluding those
-  whose ligand contacts a crystallographic symmetry mate on the grounds that such contacts
-  could inflate protein-clash failures. That subset was not published. We recomputed it from
-  first principles with gemmi<sup><a href="#r6">6</a></sup>: each deposited structure was
-  expanded by its spacegroup and the closest approach measured between the ligand of interest
-  and any symmetry image of the protein, counting only amino-acid residues. 104 of 427
-  resolvable complexes fall within 4.0 Å; a broader criterion including solvent and
-  cryoprotectant flags 119. These bracket the 120 the authors removed, and are an independent
-  estimate rather than a reproduction of their list.</p>
-</section>
+{_tbl(1, "Ligand properties carrying independent signal, per check. Multivariate models, "
+         "odds ratio per standard deviation, other descriptors held fixed.", sig_table)}
 
 <section>
-  <h2><span class="n">3</span>Results</h2>
-
-  <h3><span class="n">3.1</span>Accuracy and validity diverge sharply by method class</h3>
-  <p>Classical search methods produce accurate poses about half the time, and nearly all of
-  those poses are physically valid. Deep-learning methods produce fewer accurate poses, and
-  most of the accurate ones are invalid (Table 1). DiffDock is the strongest deep-learning
-  method by RMSD alone and 64.2% of its accurate poses fail at least one validity check.</p>
-</section>
-
-{_tbl(1, "Accuracy, validity, and their intersection, per method. Raw poses, 428 complexes. "
-         "The final column is the share of RMSD-accurate poses that are physically invalid.",
-      headline())}
-
-<section>
-  <h3><span class="n">3.2</span>The published checks reproduce</h3>
-  <p>Every result here reads the published check outcomes rather than recomputing them, so the
-  analysis depends on interpreting those columns correctly. We tested that by re-running
-  PoseBusters on all 513 crystal ligands against their own receptors and comparing to the
-  paper's own reference rows. Worst-case agreement across {val['n_checks']} mapped checks is
-  <span class="q pass">{val['worst']:.2%}</span>, with {val['perfect']} of {val['n_checks']}
-  checks agreeing on all 513 structures. The two disagreements are single structures on
-  different checks — <code>7V3S</code> on aromatic ring flatness and <code>7T0U</code> on
-  strain energy, the latter one of the two borderline failures the paper itself reports.</p>
-
-  <h3><span class="n">3.3</span>Two thirds of the grid is unmeasurable</h3>
-  <p>Of {cov['total']} method × check combinations, {cov['estimated']} carry enough failures
-  and enough distinct ligands to estimate an effect (Table 2). The remaining {n_skipped} are
-  not null results; they are unmeasured, mostly because the check never failed for that method.
-  Across the estimable strata, {n_est} descriptor associations were computed and
-  <strong>{n_sig} survive</strong> false-discovery-rate correction.</p>
-</section>
-
-{_tbl(2, "Estimability of the 126 method × check strata. Thresholds: at least 15 failures "
-         "and at least 30 distinct ligands.", cov_table)}
-
-<section>
-  <h3><span class="n">3.4</span>Surviving associations are dominated by size and flexibility</h3>
-  <p>The largest surviving effects (Figure 1, Table 3) concentrate on internal-geometry
-  checks — internal clashes, bond lengths, bond angles, strain energy — and on two
-  descriptors, molecular weight and rotatable-bond count. Both appear repeatedly on the same
-  check for the same method with overlapping intervals, which is not two findings but one
-  signal counted twice: the two descriptors correlate at ρ ≈ 0.73–0.74 within every method's
-  ligand set. Marginal estimates cannot separate them.</p>
+  <p><strong>Internal geometry is a flexibility problem.</strong> Rotatable-bond count is
+  significant for both strain energy and internal clashes in 4 of 5 methods, with consistent
+  sign and odds ratios of 1.6–9.5. Molecular weight is also significant for internal clashes
+  in 3 of 5, but DeepDock's coefficient is inverted — so flexibility is the consistent driver
+  where size is not.</p>
+  <p><strong>Chirality is a stereocentre-count problem</strong> and nothing else: an odds ratio
+  of 10.4 for TankBind and 4.3 for Uni-Mol, with no other descriptor significant for either.
+  Inverting a stereocentre does not produce a distorted molecule — it produces a different
+  compound, often the inactive enantiomer.</p>
+  <p><strong>One method's bond geometry is near-deterministic in size.</strong> The single
+  largest effects in the study are Uni-Mol's: molecular weight carries an odds ratio of 47 on
+  bond lengths and 103 on bond angles, per standard deviation, on 269 and 284 failures
+  respectively (<em>p</em> &lt; 10<sup>−8</sup>). Uni-Mol fails bond geometry on essentially
+  every large ligand. The wide range in Table 1's bond-length row spans that estimate and
+  TankBind's far smaller one — they are different magnitudes, not a tight interval.</p>
+  <p><strong>Cofactor clashes go the other way.</strong> Within the 187 cofactor-bearing
+  complexes, molecular weight has an odds ratio of 0.17–0.31 in 4 of 5 methods — smaller
+  ligands clash <em>more</em> — while stereocentre count raises failure 2.3–3.2×.</p>
+  <p><strong>The most common failure has no signature at all.</strong> Steric clash with the
+  protein fails on roughly 84% of deep-learning poses, yet only {sig['clash_sig']} of
+  {sig['clash_total']} coefficients across {sig['clash_methods']} methods reach significance,
+  and no descriptor agrees on more than two. The dominant failure mode is not about the
+  molecule; the failures that <em>discriminate</em> between molecules — strain, self-clash,
+  chirality — are predictable from three descriptors.</p>
 </section>
 
 {_fig('03_effect_forest.png', 1,
-      "The 18 largest surviving marginal associations with cluster-bootstrap 95% confidence "
-      "intervals, after eligibility gating and Benjamini–Hochberg correction. Molecular "
-      "weight and rotatable-bond count recur on the same check for the same method, "
-      "reflecting their collinearity rather than independent effects.")}
-
-{_tbl(3, "Twelve largest surviving associations by |d|. Failures and ligands give the "
-         "denominator each estimate rests on.", survivors())}
+      "The largest single-descriptor associations surviving eligibility gating, "
+      "ligand-clustered bootstrap intervals and Benjamini–Hochberg correction "
+      f"({n_sig} of {n_est} estimates survive). Molecular weight and rotatable-bond count "
+      "recur on the same check for the same method — one signal counted twice, which is why "
+      "Table 1 uses multivariate models instead.")}
 
 <section>
-  <h3><span class="n">3.5</span>Each failure mode has a distinct ligand signature</h3>
-  <p>Table 4 is the analysis's central result: for each check, the ligand properties that
-  carry independent signal once the other six descriptors are held fixed, and how many
-  docking methods agree. Four patterns emerge.</p>
-  <p><strong>Strain energy and internal clashes are flexibility phenomena.</strong>
-  Rotatable-bond count is significant for both in 4 of 5 methods with consistent sign
-  (odds ratios 1.6–9.5 per standard deviation). Molecular weight is also significant for
-  internal clashes in 3 of 5, but DeepDock's coefficient is inverted, so size is not
-  consistent where flexibility is. <strong>Chirality inversion is a stereocentre-count
-  phenomenon</strong> and nothing else, with the largest effect in the study — an odds ratio
-  of 10.4 for TankBind. <strong>Cofactor clashes afflict small, stereocentre-rich
-  ligands</strong>: within the 187 cofactor-bearing complexes, molecular weight has an odds
-  ratio of 0.17–0.31 in 4 of 5 methods, meaning smaller ligands clash more, while stereocentre
-  count raises failure by 2.3–3.2×.</p>
-  <p><strong>The most frequent failure has no ligand signature at all.</strong> Steric clash
-  with the protein fails on roughly 84% of deep-learning poses, yet only {sig['clash_sig']} of
-  {sig['clash_total']} coefficients across {sig['clash_methods']} methods reach significance
-  and no descriptor agrees on more than two. The dominant failure mode is not a property of
-  the molecule. The failures that <em>do</em> discriminate between ligands — strain,
-  self-clash, chirality — are predictable from three descriptors.</p>
+  <h2><span class="n">2</span>Where size and flexibility cannot be separated</h2>
+  <p>The natural reading of §1 is that torsional freedom rather than bulk drives strain and
+  clash failure. The data supports that only in the weak form stated above. Molecular weight
+  and rotatable-bond count correlate at ρ ≈ 0.73–0.74 <em>within every method's ligand set</em>,
+  not merely on average, so no stratification of these 428 complexes separates them. For
+  DiffDock — the strongest deep-learning method and the one the question is usually asked
+  about — neither descriptor reaches significance once the other is held fixed
+  (<em>p</em> = 0.941 and 0.108), despite both surviving correction individually. Answering
+  the question properly needs a benchmark built to decorrelate the two, with large rigid
+  ligands and small flexible ones in comparable numbers.</p>
+
+  <h2><span class="n">3</span>Crystal contacts are not the explanation</h2>
+  <p>The benchmark's journal version drops 120 of 428 complexes whose ligand touches a
+  crystallographic symmetry mate, on the reasoning that such contacts inflate protein-clash
+  failure. That subset was never published, so we recomputed it from spacegroup expansion:
+  104 of 427 resolvable complexes have a protein contact within 4.0 Å (119 counting solvent),
+  bracketing the authors' 120. Contact status does not explain the clash rate. One method of
+  seven shows a significant difference and it runs the <em>opposite</em> way — Uni-Mol's clash
+  failure is 17.1 points <em>lower</em> among contact-bearing complexes (95% CI −27.0 to −7.7).
+  The other six straddle zero; Vina and Gold fail so rarely (2 of 323 and 16 of 322 poses)
+  that their point estimates carry no information.</p>
 </section>
 
 <section>
-  <h3><span class="n">3.6</span>Flexibility versus size is not separable where both appear</h3>
-  <p>The natural hypothesis is that torsional freedom, not molecular size, drives strain and
-  clash failures: a flexible molecule has more ways to be locally wrong while remaining
-  globally close to the crystal pose. Testing it requires holding one descriptor fixed while
-  varying the other, which their correlation forbids in a stratified table. Logistic models
-  with both descriptors entered together give a per-method answer that does not agree with
-  itself (Table 5).</p>
-  <p>For <strong>DiffDock</strong>, neither descriptor reaches significance once the other is
-  held fixed (<em>p</em> = 0.941 and 0.108), despite both surviving correction as marginal
-  effects. EquiBind gives the only clean flexibility-only result and is the weakest method in
-  the benchmark. DeepDock, TankBind and Uni-Mol show both descriptors carrying independent
-  signal; DeepDock's weight coefficient is negative, the opposite sign to a naive
-  "larger molecules fail more" account. Gold and Vina fail too rarely to fit.</p>
-  <p>The contrast is therefore not identified in this dataset for the method it was posed
-  about. This is a property of the benchmark's ligand set, not of the sample size: the
-  correlation is essentially constant across every method's stratum, so no reweighting or
-  larger subset of these complexes would separate the two.</p>
+  <h2><span class="n">4</span>How large the gap is</h2>
+  <p>Classical search methods produce accurate poses about half the time and nearly all are
+  valid. Deep-learning methods produce fewer accurate poses, and most of those are invalid.</p>
 </section>
 
-{_tbl(4, "Ligand properties carrying independent signal per check, from the "
-         "clustered logistic models. Odds ratio per standard deviation, other descriptors "
-         "held fixed; below 1 means the failure becomes less likely as the property rises. "
-         "Only descriptors significant for at least two methods are listed.", sig_table)}
-
-{_tbl(5, "Clustered logistic models of the strain-energy check, both descriptors entered "
-         "together with five others. Standard errors clustered on ligand.", flexibility())}
+{_tbl(2, "Accuracy, validity and their intersection. Raw poses, 428 complexes.", headline())}
 
 <section>
-  <h3><span class="n">3.7</span>Crystal contacts do not inflate protein-clash failure</h3>
-  <p>Protein clash is the most-failed check for deep-learning methods, so if it concentrated
-  in complexes whose ligand touches a symmetry mate, the headline failure rate would be partly
-  an artifact of crystal packing. It does not (Table 6). One method of seven shows a
-  significant difference and its clash failure is <em>lower</em> among contact-bearing
-  complexes, the reverse of the predicted direction. The remaining six are indistinguishable
-  from zero, and the two classical methods fail so rarely — Vina on 2 of 323 no-contact poses,
-  Gold on 16 of 322 — that their point estimates carry no information.</p>
+  <p>Reporting invalidity only among accurate poses conditions on an outcome that shares an
+  upstream cause with validity. Banding raw RMSD instead uses every pose and needs no such
+  conditioning — and shows the failure is not confined to marginal poses. Deep-learning
+  validity is already poor at sub-Ångström accuracy (DiffDock 61.3%, Uni-Mol 33.3%) and does
+  not recover further out; the classical methods stay above 88% in every band.</p>
 </section>
 
-{_tbl(6, "Protein-clash failure by crystal-contact status, with cluster-bootstrap intervals "
-         "on the difference (2,000 replicates, resampling complexes).", crystal_contacts())}
-
-<section>
-  <h3><span class="n">3.8</span>Invalidity is not confined to marginal poses</h3>
-  <p>Reporting invalidity only among RMSD-accurate poses conditions on an outcome that shares
-  an upstream cause with validity, which can induce association between otherwise unrelated
-  quantities. Banding raw RMSD avoids this and uses every pose (Table 7). Deep-learning
-  validity is already poor at sub-Ångström accuracy — DiffDock 61.3%, Uni-Mol 33.3% — and does
-  not recover at larger RMSD. The classical methods are above 88% in every band.</p>
-  <p>Conditioned on accuracy, the invalid share rises monotonically with rotatable-bond count
-  in both method classes, and is close to flat against ring count (Figure 2). Per-check, the
-  strain-energy and internal-clash failures climb steeply with flexibility while planarity
-  checks barely move (Figure 3) — consistent with the surviving associations in §3.4, and
-  subject to the same identifiability limit in §3.5.</p>
-</section>
-
-{_tbl(7, "Share of poses passing all applicable validity checks, by RMSD band. "
+{_tbl(3, "Share of poses passing all applicable checks, by RMSD band. "
          "Unconditioned on accuracy.", rmsd_bands())}
 
 {_fig('01_gap_by_partition.png', 2,
       "Share of RMSD-accurate poses that are physically invalid, across four ligand "
-      "partitions. Monotone against rotatable-bond count in both method classes; close to "
-      "flat against ring count. Correlated descriptors mean this does not by itself "
-      "establish which property is responsible.")}
+      "partitions. Monotone against rotatable-bond count in both method classes, close to "
+      "flat against ring count.")}
 
 {_fig('02_checks_by_flexibility.png', 3,
-      "Per-check failure rate against rotatable-bond count, pooled across the five "
-      "deep-learning methods, with eligibility-gated denominators. Cofactor-clash checks are "
-      "excluded as receptor- rather than ligand-conditioned.")}
+      "Per-check failure against rotatable-bond count, pooled across the five deep-learning "
+      "methods, with eligibility-gated denominators. Strain and internal clash climb steeply; "
+      "planarity checks barely move. Cofactor checks are excluded as receptor-conditioned.")}
 
 <section>
-  <h3><span class="n">3.9</span>Replication on a held-out set</h3>
-  <p>All estimates above were both discovered and computed on the same 428 complexes. The 85
-  Astex complexes were untouched throughout, so re-estimating a shortlist there is an
-  independent test. Of {rep['n']} checkable triples, <strong>{rep['replicated']} replicate
-  with statistical support</strong> — both intervals excluding zero (Table 8).
-  {rep['same_sign']} of {rep['n']} agree in sign, but agreement between two estimates that
-  both straddle zero carries no information, so {rep['replicated']}/{rep['n']} is the
-  defensible figure. The strain-energy and internal-clash effects against rotatable bonds
-  replicate for every deep-learning method tested; the stereochemistry and protein-clash
-  effects largely do not.</p>
-</section>
-
-{_tbl(8, "Shortlisted effects re-estimated on the held-out Astex Diverse Set. "
-         "Rows resting on fewer than 15 failures on either side are flagged thin.",
-      rep_table)}
-
-<section>
-  <h2><span class="n">4</span>Discussion</h2>
-  <p>The clearest result is negative, and it is about the benchmark rather than the methods.
-  The two descriptors that any account of docking failure would want to distinguish — how big
-  a molecule is and how many ways it can bend — are entangled throughout this ligand set at a
-  level that no analysis of these 428 complexes can undo. Marginal estimates make both look
-  significant; multivariate models make neither look significant for the method the question
-  is most often asked about. Answering it would require a benchmark assembled to decorrelate
-  them, containing large rigid ligands and small flexible ones in comparable numbers.</p>
-  <p>The crystal-contact result is similarly cautionary. The exclusion of contact-bearing
-  complexes is a reasonable methodological precaution, but in this data it does not do what it
-  is assumed to do: protein-clash failure is no higher among the complexes it removes. That is
-  worth knowing before treating the 308-complex subset as a cleaner benchmark than the 428.</p>
-  <p>What does survive is coarser than the descriptor-level story the marginal grid appears to
-  tell. Deep-learning poses fail internal-geometry checks — clashes, bond geometry, strain —
-  at rates that rise with molecular size and flexibility jointly, and the failure is not
-  confined to poses that barely clear the RMSD threshold. It is present at sub-Ångström
-  accuracy, which suggests these methods are not producing slightly-imperfect physical
-  molecules but rather point clouds that happen to be near the right coordinates.</p>
-  <p>Finally, {n_skipped} of {cov['total']} strata could not be estimated at all, most because
-  the check never failed for that method. Reporting an effect grid without that denominator
-  invites reading absence of estimate as absence of effect.</p>
+  <h2><span class="n">5</span>Confidence in these numbers</h2>
+  <p><strong>The published checks reproduce.</strong> Everything here reads the paper's
+  published check outcomes rather than recomputing them, so we re-ran PoseBusters on all 513
+  crystal ligands against their own receptors: worst-case agreement
+  <span class="q pass">{val['worst']:.2%}</span> across {val['n_checks']} checks, with
+  {val['perfect']} agreeing on all 513 structures. The two disagreements are single structures
+  on different checks.</p>
+  <p><strong>The main effects replicate held-out.</strong> The 85-complex Astex Diverse Set was
+  untouched throughout. Of {rep['n']} shortlisted effects, {rep['replicated']} replicate with
+  both intervals excluding zero — the strain and internal-clash effects against rotatable bonds
+  do so for every deep-learning method tested; the chirality and protein-clash effects largely
+  do not.</p>
+  <p><strong>Two thirds of the grid is unmeasurable.</strong> {n_skipped} of {cov['total']}
+  method × check strata could not be estimated, {int(pd.read_csv(TABLES / 'stratum_coverage.csv').skip_reason.eq('no_failures').sum())}
+  of them because the check never failed for that method. Those are not null results; they are
+  absent measurements, and an effect grid without that denominator invites reading silence as
+  evidence.</p>
 </section>
 
 <section>
-  <h2><span class="n">5</span>Limitations</h2>
-  <p>Descriptors describe the docked molecule, not the returned pose, so nothing here measures
-  how wrong a pose is beyond the binary checks. The predicted poses were never released, so
-  the methods' check results cannot be independently recomputed; only the crystal-structure
-  rows could be, and were (§3.2). The crystal-contact flag is our own estimate and brackets
-  rather than reproduces the authors' undisclosed subset. Several surviving associations rest
-  on small failure counts even after gating — DiffDock's internal-clash effects on 25 failures
-  — and single rows should not be read as decisive. The cofactor-clash checks are conditioned
-  on the receptor and are reported only in the estimable-strata counts, not interpreted as
-  ligand chemistry.</p>
-</section>
-
-<section>
-  <h2><span class="n">6</span>Data and code availability</h2>
-  <p>Source data are the PoseBusters paper data<sup><a href="#r2">2</a></sup> on Zenodo and
-  deposited structures from the RCSB PDB<sup><a href="#r7">7</a></sup>, both fetched
-  automatically by the pipeline. Every table in this paper is read from the analysis outputs
-  at render time and every figure is inlined from the generated originals, so the document
-  cannot diverge from the analysis it reports. The pipeline is deterministic under fixed
-  seeds and covered by 37 tests.</p>
+  <h2><span class="n">6</span>Method</h2>
+  <p>27 RDKit<sup><a href="#r4">4</a></sup> descriptors per crystal ligand (size, flexibility,
+  ring system, stereochemistry, polarity, composition), joined to the published results
+  table<sup><a href="#r2">2</a></sup> on PDB code. Blank check values in that table mean the
+  check was <em>not run</em>, not that it failed — both flatness columns are blank for all
+  2,996 energy-minimised rows — and 85 rows have every check blank because the method produced
+  no pose; treating either as a pass inflates validity.</p>
+  <p>Each check is restricted to ligands that could fail it: a molecule with no stereocentres
+  cannot fail the chirality check, and counting it as a trivial pass both deflates the failure
+  rate and inflates any effect measured against the gating descriptor. Gating raises the
+  observed chirality-failure rate from 21.4% to 36.7%. The four cofactor checks are further
+  restricted to cofactor-bearing complexes, since they pass almost automatically otherwise
+  (2.4% versus 22.5% failure).</p>
+  <p>Effects are estimated per method, never pooled. Intervals come from a bootstrap resampling
+  <em>ligands</em> rather than poses, since each ligand contributes one pose per method and
+  treating 2,140 rows as independent would report intervals roughly √5 too narrow. Strata with
+  fewer than 15 failures or 30 distinct ligands are not estimated. Single-descriptor estimates
+  across the whole grid are corrected by Benjamini–Hochberg<sup><a href="#r5">5</a></sup> at
+  α = 0.05 as one family; because they cannot separate correlated descriptors, the per-check
+  conclusions in §1 come from the multivariate models. Crystal contacts were computed with
+  gemmi<sup><a href="#r6">6</a></sup> by expanding each deposited structure<sup><a href="#r7">7</a></sup>
+  by its spacegroup.</p>
+  <p><strong>Caveats.</strong> Descriptors describe the docked molecule, not the returned pose.
+  The predicted poses were never released, so only the crystal-structure rows could be
+  independently recomputed. Several surviving effects rest on small failure counts even after
+  gating — DiffDock's internal-clash effects on 25 failures — so single rows should not be read
+  as decisive.</p>
 </section>
 
 <section>
   <h2>References</h2>
   <ol class="refs">
-    <li id="r1">Buttenschoen M, Morris GM, Deane CM. PoseBusters: AI-based docking methods
-      fail to generate physically valid poses or generalise to novel sequences.
-      <em>Chem Sci</em> <strong>15</strong>, 3130–3139 (2024).
+    <li id="r1">Buttenschoen M, Morris GM, Deane CM. PoseBusters: AI-based docking methods fail
+      to generate physically valid poses or generalise to novel sequences. <em>Chem Sci</em>
+      <strong>15</strong>, 3130–3139 (2024).
       <a href="https://doi.org/10.1039/D3SC04185A">doi:10.1039/D3SC04185A</a></li>
     <li id="r2">Buttenschoen M, Morris GM, Deane CM. PoseBusters paper data. Zenodo (2023).
       <a href="https://doi.org/10.5281/zenodo.8278563">doi:10.5281/zenodo.8278563</a></li>
-    <li id="r3">Hartshorn MJ <em>et al.</em> Diverse, high-quality test set for the validation
-      of protein–ligand docking performance. <em>J Med Chem</em> <strong>50</strong>, 726–741 (2007).</li>
     <li id="r4">RDKit: open-source cheminformatics. <a href="https://www.rdkit.org">rdkit.org</a></li>
-    <li id="r5">Benjamini Y, Hochberg Y. Controlling the false discovery rate: a practical and
-      powerful approach to multiple testing. <em>J R Stat Soc B</em> <strong>57</strong>, 289–300 (1995).</li>
+    <li id="r5">Benjamini Y, Hochberg Y. Controlling the false discovery rate. <em>J R Stat
+      Soc B</em> <strong>57</strong>, 289–300 (1995).</li>
     <li id="r6">Wojdyr M. GEMMI: a library for structural biology. <em>J Open Source Softw</em>
       <strong>7</strong>, 4200 (2022).</li>
     <li id="r7">Berman HM <em>et al.</em> The Protein Data Bank. <em>Nucleic Acids Res</em>
@@ -527,9 +360,9 @@ def build() -> Path:
 </section>
 
 <footer>
-  <p>Analysis conditioned on ligand chemistry rather than docking method. All estimates carry
-  cluster-bootstrap intervals; no point estimate is reported without one. Generated from
-  <code>reports/tables/</code> — regenerate with <code>python -m pb.paper_html</code>.</p>
+  <p>Every table is read from the analysis outputs at render time and every figure inlined from
+  its original, so this document cannot diverge from the analysis it reports. Deterministic
+  under fixed seeds; 37 tests. Regenerate with <code>python -m pb.paper_html</code>.</p>
 </footer>
 
 </div>
