@@ -16,6 +16,7 @@ import pandas as pd
 from . import paths
 from .report_html import (
     TABLES,
+    check_signatures,
     _img,
     _table,
     cofactor,
@@ -35,24 +36,13 @@ OUT = paths.REPORTS / "paper.html"
 
 CSS = """
 :root{
-  --paper:#FAFAF8;--raise:#FFFFFF;--ink:#14181B;--ink-2:#3E474D;--ink-3:#78838A;
-  --rule:#C9D0D3;--rule-soft:#E2E7E9;--accent:#0A5F7A;--accent-soft:#0a5f7a1a;
+  --paper:#FFFFFF;--raise:#FFFFFF;--ink:#101418;--ink-2:#39424A;--ink-3:#727C84;
+  --rule:#B9C2C7;--rule-soft:#DFE4E7;--accent:#0A5F7A;--accent-soft:#0a5f7a14;
   --pass:#2C6E4E;--fail:#9E3A28;
   --serif:"Iowan Old Style","Charter","Palatino Linotype",Palatino,Georgia,serif;
   --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  color-scheme:light;
 }
-@media (prefers-color-scheme:dark){:root{
-  --paper:#0C1013;--raise:#12181C;--ink:#E2E8EA;--ink-2:#9FAAB1;--ink-3:#727E85;
-  --rule:#263137;--rule-soft:#1B242A;--accent:#5FBAD4;--accent-soft:#5fbad41f;
-  --pass:#5FAE83;--fail:#DF7A61;}}
-:root[data-theme="dark"]{
-  --paper:#0C1013;--raise:#12181C;--ink:#E2E8EA;--ink-2:#9FAAB1;--ink-3:#727E85;
-  --rule:#263137;--rule-soft:#1B242A;--accent:#5FBAD4;--accent-soft:#5fbad41f;
-  --pass:#5FAE83;--fail:#DF7A61;}
-:root[data-theme="light"]{
-  --paper:#FAFAF8;--raise:#FFFFFF;--ink:#14181B;--ink-2:#3E474D;--ink-3:#78838A;
-  --rule:#C9D0D3;--rule-soft:#E2E7E9;--accent:#0A5F7A;--accent-soft:#0a5f7a1a;
-  --pass:#2C6E4E;--fail:#9E3A28;}
 
 html{background:var(--paper)}
 body{background:var(--paper);color:var(--ink);font-family:var(--serif);
@@ -69,7 +59,7 @@ h1{font-weight:400;font-size:clamp(28px,4.4vw,40px);line-height:1.14;letter-spac
 .rule{height:1px;background:var(--rule);margin:34px 0 0}
 
 /* ── abstract ────────────────────────────────────────────────── */
-.abstract{background:var(--raise);border:1px solid var(--rule-soft);border-radius:2px;
+.abstract{background:#FCFCFB;border:1px solid var(--rule-soft);border-radius:2px;
   padding:22px 26px;margin:34px 0 8px;font-size:15.5px;line-height:1.58;color:var(--ink-2)}
 .abstract h2{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;
   color:var(--accent);margin:0 0 10px;border:0;padding:0}
@@ -133,7 +123,9 @@ footer a{color:var(--accent);text-decoration:none}
   h2{font-size:13pt;margin-top:20px}
   h3{font-size:10.5pt}
   section{break-inside:auto}
-  figure,.tbl,.abstract{break-inside:avoid}
+  figure,.tbl{break-inside:avoid}
+  .abstract{break-inside:auto}
+  .rule{margin-top:20px}
   .scroll{overflow:visible}
   table{font-size:7pt}
   th,td{padding:4px 6px;white-space:normal}
@@ -163,6 +155,7 @@ def build() -> Path:
     rep_table, rep = replication()
     val_table, val = validation()
     cf = cofactor()
+    sig_table, sig = check_signatures()
     n_skipped = cov["total"] - cov["estimated"]
 
     grid = pd.read_csv(TABLES / "association_grid.csv")
@@ -192,16 +185,20 @@ def build() -> Path:
   validity failure. Estimates are restricted to ligands capable of failing the check in
   question, computed per docking method, bootstrapped over ligands rather than poses, and
   corrected for multiple testing.</p>
-  <p><strong>Three results.</strong> First, only <strong>{cov['estimated']} of
-  {cov['total']}</strong> method × check strata carry enough failures to estimate at all;
-  of {n_est} resulting estimates, <strong>{n_sig}</strong> survive false-discovery-rate
-  correction. Second, molecular weight and rotatable-bond count are so strongly correlated
-  within every method's ligand set (ρ ≈ 0.73–0.74) that the intuitive hypothesis — that
-  torsional flexibility rather than size drives strain and clash failures —
-  <strong>is not identifiable</strong> for DiffDock, the strongest deep-learning method.
-  Third, removing complexes whose ligand contacts a crystallographic symmetry mate does
-  <strong>not</strong> reduce protein-clash failure; one method of seven shows a significant
-  difference and it runs in the opposite direction.</p>
+  <p><strong>Each failure mode has a distinct ligand signature.</strong> Strain-energy and
+  internal-clash failures are driven by torsional flexibility (rotatable bonds significant in
+  4 of 5 methods, odds ratio 1.6–9.5 per standard deviation). Chirality inversion is driven
+  by stereocentre count alone (odds ratio up to 10.4). Cofactor clashes afflict <em>small</em>,
+  stereocentre-rich ligands (molecular weight odds ratio 0.17–0.31). The most frequent failure
+  of all — steric clash with the protein — has <strong>no ligand signature</strong>: 5 of 42
+  coefficients reach significance and none replicates across methods, indicating a property of
+  the method rather than the molecule.</p>
+  <p>Two boundaries constrain interpretation. Only <strong>{cov['estimated']} of
+  {cov['total']}</strong> method × check strata carry enough failures to estimate at all, and
+  molecular weight and rotatable-bond count are correlated at ρ ≈ 0.73–0.74 within every
+  method's ligand set, so where both are significant they cannot be separated. Removing
+  complexes whose ligand contacts a crystallographic symmetry mate does <strong>not</strong>
+  reduce protein-clash failure.</p>
   <p>We validate the analysis by re-running the checker itself on all 513 crystal structures
   ({val['worst']:.1%} worst-case agreement with the published reference rows) and test
   generalisation on the 85-complex Astex Diverse Set, where {rep['replicated']} of
@@ -352,13 +349,36 @@ def build() -> Path:
          "denominator each estimate rests on.", survivors())}
 
 <section>
-  <h3><span class="n">3.5</span>Flexibility versus size is not identifiable</h3>
+  <h3><span class="n">3.5</span>Each failure mode has a distinct ligand signature</h3>
+  <p>Table 4 is the analysis's central result: for each check, the ligand properties that
+  carry independent signal once the other six descriptors are held fixed, and how many
+  docking methods agree. Four patterns emerge.</p>
+  <p><strong>Strain energy and internal clashes are flexibility phenomena.</strong>
+  Rotatable-bond count is significant for both in 4 of 5 methods with consistent sign
+  (odds ratios 1.6–9.5 per standard deviation). Molecular weight is also significant for
+  internal clashes in 3 of 5, but DeepDock's coefficient is inverted, so size is not
+  consistent where flexibility is. <strong>Chirality inversion is a stereocentre-count
+  phenomenon</strong> and nothing else, with the largest effect in the study — an odds ratio
+  of 10.4 for TankBind. <strong>Cofactor clashes afflict small, stereocentre-rich
+  ligands</strong>: within the 187 cofactor-bearing complexes, molecular weight has an odds
+  ratio of 0.17–0.31 in 4 of 5 methods, meaning smaller ligands clash more, while stereocentre
+  count raises failure by 2.3–3.2×.</p>
+  <p><strong>The most frequent failure has no ligand signature at all.</strong> Steric clash
+  with the protein fails on roughly 84% of deep-learning poses, yet only {sig['clash_sig']} of
+  {sig['clash_total']} coefficients across {sig['clash_methods']} methods reach significance
+  and no descriptor agrees on more than two. The dominant failure mode is not a property of
+  the molecule. The failures that <em>do</em> discriminate between ligands — strain,
+  self-clash, chirality — are predictable from three descriptors.</p>
+</section>
+
+<section>
+  <h3><span class="n">3.6</span>Flexibility versus size is not separable where both appear</h3>
   <p>The natural hypothesis is that torsional freedom, not molecular size, drives strain and
   clash failures: a flexible molecule has more ways to be locally wrong while remaining
   globally close to the crystal pose. Testing it requires holding one descriptor fixed while
   varying the other, which their correlation forbids in a stratified table. Logistic models
   with both descriptors entered together give a per-method answer that does not agree with
-  itself (Table 4).</p>
+  itself (Table 5).</p>
   <p>For <strong>DiffDock</strong>, neither descriptor reaches significance once the other is
   held fixed (<em>p</em> = 0.941 and 0.108), despite both surviving correction as marginal
   effects. EquiBind gives the only clean flexibility-only result and is the weakest method in
@@ -371,28 +391,33 @@ def build() -> Path:
   larger subset of these complexes would separate the two.</p>
 </section>
 
-{_tbl(4, "Clustered logistic models of the strain-energy check, both descriptors entered "
+{_tbl(4, "Ligand properties carrying independent signal per check, from the "
+         "clustered logistic models. Odds ratio per standard deviation, other descriptors "
+         "held fixed; below 1 means the failure becomes less likely as the property rises. "
+         "Only descriptors significant for at least two methods are listed.", sig_table)}
+
+{_tbl(5, "Clustered logistic models of the strain-energy check, both descriptors entered "
          "together with five others. Standard errors clustered on ligand.", flexibility())}
 
 <section>
-  <h3><span class="n">3.6</span>Crystal contacts do not inflate protein-clash failure</h3>
+  <h3><span class="n">3.7</span>Crystal contacts do not inflate protein-clash failure</h3>
   <p>Protein clash is the most-failed check for deep-learning methods, so if it concentrated
   in complexes whose ligand touches a symmetry mate, the headline failure rate would be partly
-  an artifact of crystal packing. It does not (Table 5). One method of seven shows a
+  an artifact of crystal packing. It does not (Table 6). One method of seven shows a
   significant difference and its clash failure is <em>lower</em> among contact-bearing
   complexes, the reverse of the predicted direction. The remaining six are indistinguishable
   from zero, and the two classical methods fail so rarely — Vina on 2 of 323 no-contact poses,
   Gold on 16 of 322 — that their point estimates carry no information.</p>
 </section>
 
-{_tbl(5, "Protein-clash failure by crystal-contact status, with cluster-bootstrap intervals "
+{_tbl(6, "Protein-clash failure by crystal-contact status, with cluster-bootstrap intervals "
          "on the difference (2,000 replicates, resampling complexes).", crystal_contacts())}
 
 <section>
-  <h3><span class="n">3.7</span>Invalidity is not confined to marginal poses</h3>
+  <h3><span class="n">3.8</span>Invalidity is not confined to marginal poses</h3>
   <p>Reporting invalidity only among RMSD-accurate poses conditions on an outcome that shares
   an upstream cause with validity, which can induce association between otherwise unrelated
-  quantities. Banding raw RMSD avoids this and uses every pose (Table 6). Deep-learning
+  quantities. Banding raw RMSD avoids this and uses every pose (Table 7). Deep-learning
   validity is already poor at sub-Ångström accuracy — DiffDock 61.3%, Uni-Mol 33.3% — and does
   not recover at larger RMSD. The classical methods are above 88% in every band.</p>
   <p>Conditioned on accuracy, the invalid share rises monotonically with rotatable-bond count
@@ -402,7 +427,7 @@ def build() -> Path:
   subject to the same identifiability limit in §3.5.</p>
 </section>
 
-{_tbl(6, "Share of poses passing all applicable validity checks, by RMSD band. "
+{_tbl(7, "Share of poses passing all applicable validity checks, by RMSD band. "
          "Unconditioned on accuracy.", rmsd_bands())}
 
 {_fig('01_gap_by_partition.png', 2,
@@ -417,11 +442,11 @@ def build() -> Path:
       "excluded as receptor- rather than ligand-conditioned.")}
 
 <section>
-  <h3><span class="n">3.8</span>Replication on a held-out set</h3>
+  <h3><span class="n">3.9</span>Replication on a held-out set</h3>
   <p>All estimates above were both discovered and computed on the same 428 complexes. The 85
   Astex complexes were untouched throughout, so re-estimating a shortlist there is an
   independent test. Of {rep['n']} checkable triples, <strong>{rep['replicated']} replicate
-  with statistical support</strong> — both intervals excluding zero (Table 7).
+  with statistical support</strong> — both intervals excluding zero (Table 8).
   {rep['same_sign']} of {rep['n']} agree in sign, but agreement between two estimates that
   both straddle zero carries no information, so {rep['replicated']}/{rep['n']} is the
   defensible figure. The strain-energy and internal-clash effects against rotatable bonds
@@ -429,7 +454,7 @@ def build() -> Path:
   effects largely do not.</p>
 </section>
 
-{_tbl(7, "Shortlisted effects re-estimated on the held-out Astex Diverse Set. "
+{_tbl(8, "Shortlisted effects re-estimated on the held-out Astex Diverse Set. "
          "Rows resting on fewer than 15 failures on either side are flagged thin.",
       rep_table)}
 

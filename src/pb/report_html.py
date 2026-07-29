@@ -581,3 +581,62 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+def check_signatures(min_methods: int = 2) -> tuple[str, dict]:
+    """Which descriptors carry independent signal for each check, and how consistently.
+
+    This is the analysis's primary question: not which method fails, but what a
+    ligand has to look like to break a given check. Each row is one descriptor
+    that reaches significance in the multivariate model for at least
+    `min_methods` docking methods with a consistent sign. Odds ratios are per
+    standard deviation with the other descriptors held fixed, so a value below 1
+    means the failure gets *less* likely as the descriptor rises.
+    """
+    import numpy as np
+
+    m = pd.read_csv(TABLES / "check_models.csv")
+    m = m[m.estimable]
+    sig = m[m.p_value < 0.05].copy()
+    sig["dir"] = np.where(sig.coef > 0, "up", "down")
+
+    rows = []
+    for check, group in sig.groupby("check"):
+        fitted = m[m.check == check].method.nunique()
+        for (descriptor, direction), hits in group.groupby(["descriptor", "dir"]):
+            if len(hits) < min_methods:
+                continue
+            lo, hi = hits.odds_ratio.min(), hits.odds_ratio.max()
+            rows.append({
+                "check": check,
+                "descriptor": descriptor,
+                "direction": direction,
+                "n": len(hits),
+                "fitted": fitted,
+                "lo": lo,
+                "hi": hi,
+                "methods": ", ".join(sorted(hits.method)),
+            })
+
+    frame = pd.DataFrame(rows).sort_values(["n", "check"], ascending=[False, True])
+    arrow = {"up": "↑ raises failure", "down": "↓ lowers failure"}
+    out = pd.DataFrame({
+        "Check": [c.replace("_", " ") for c in frame.check],
+        "Ligand property": [d.replace("_", " ") for d in frame.descriptor],
+        "Direction": [arrow[d] for d in frame.direction],
+        "Methods": [f"{n} of {f}" for n, f in zip(frame.n, frame.fitted)],
+        "Odds ratio / SD": [
+            f"{lo:.2f}" if abs(hi - lo) < 0.05 else f"{lo:.2f}–{hi:.2f}"
+            for lo, hi in zip(frame.lo, frame.hi)
+        ],
+    })
+
+    # The most-failed check is the one with nothing to report; say so explicitly.
+    clash = m[m.check == "no_clashes_with_protein"]
+    stats = {
+        "n_signatures": len(frame),
+        "clash_sig": int((clash.p_value < 0.05).sum()),
+        "clash_total": len(clash),
+        "clash_methods": clash.method.nunique(),
+    }
+    return _table(out), stats
